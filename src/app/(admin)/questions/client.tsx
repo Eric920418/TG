@@ -30,7 +30,7 @@ function emptyDraft(): Draft {
 
 export function QuestionsClient({ initial }: { initial: Question[] }) {
   const router = useRouter();
-  const [rows, setRows] = useState<Question[]>(initial);
+  const rows = initial;
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -75,8 +75,7 @@ export function QuestionsClient({ initial }: { initial: Question[] }) {
         setError(res.error);
         return;
       }
-      // 只在成功後才更新 UI（C6 樂觀刪除修正）
-      setRows((r) => r.filter((row) => row.id !== id));
+      router.refresh();
     });
   }
 

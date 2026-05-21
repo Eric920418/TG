@@ -61,7 +61,8 @@ function toDraft(g: Group): Draft {
 
 export function GroupsClient({ initial }: { initial: Group[] }) {
   const router = useRouter();
-  const [rows] = useState<Group[]>(initial);
+  // 直接用 prop，避免 useState 凍住舊資料導致 router.refresh 後列表不更新
+  const rows = initial;
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();

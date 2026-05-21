@@ -31,7 +31,7 @@ export function AdminsClient({
   isOwner: boolean;
 }) {
   const router = useRouter();
-  const [rows] = useState<Admin[]>(initial);
+  const rows = initial;
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();

@@ -37,7 +37,7 @@ function toDraft(r: KeywordRow): Draft {
 
 export function KeywordsClient({ initial }: { initial: KeywordRow[] }) {
   const router = useRouter();
-  const [rows] = useState<KeywordRow[]>(initial);
+  const rows = initial;
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
