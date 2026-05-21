@@ -52,13 +52,36 @@ export function registerBroadcastHandler(bot: Bot) {
         ? post.reply_markup.inline_keyboard
         : [];
 
+    // 把 default 按鈕「直接掛到 channel 原貼文」上（需要 bot 在 channel 有 Edit Messages 權限）
+    // 這樣 channel viewer + sub viewer 都看得到同一組按鈕
+    const defaultKb = renderButtons(group.defaultButtons);
+    const mergedKb = mergeKeyboards(sourceKb, defaultKb);
+    let updatedSourceKb = sourceKb;
+    if (defaultKb.length > 0 && mergedKb.length > sourceKb.length) {
+      try {
+        await ctx.api.editMessageReplyMarkup(
+          ctx.chat.id,
+          post.message_id,
+          { reply_markup: { inline_keyboard: mergedKb } },
+        );
+        updatedSourceKb = mergedKb;
+      } catch (err) {
+        await log({
+          type: "channel.edit_source_failed",
+          chatId: ctx.chat.id,
+          error: errorMessage(err),
+          payload: { messageId: post.message_id },
+        });
+      }
+    }
+
     await fanOut(ctx, {
       group,
       sourceChatId: ctx.chat.id,
       sourceMessageId: post.message_id,
       senderUserId: ctx.from?.id ?? null,
       senderUsername: ctx.from?.username ?? post.author_signature ?? null,
-      sourceKb,
+      sourceKb: updatedSourceKb,
     });
     return next();
   });

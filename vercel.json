@@ -9,6 +9,10 @@
     {
       "path": "/api/cron/verification-expire",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/ensure-webhook",
+      "schedule": "0 17 * * *"
     }
   ],
   "functions": {
