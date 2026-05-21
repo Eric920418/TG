@@ -138,6 +138,31 @@ export function registerAutoRegisterHandler(bot: Bot) {
       }
 
       if (kind === "main") {
+        // 規則：最多 1 個 active main。檢查是否已有別人佔走 main
+        const [existingMain] = await db
+          .select({ chatId: groups.chatId, title: groups.title })
+          .from(groups)
+          .where(
+            and(
+              eq(groups.type, "main"),
+              eq(groups.isActive, true),
+              ne(groups.chatId, chatId),
+            ),
+          )
+          .limit(1);
+        if (existingMain) {
+          await ctx.answerCallbackQuery({
+            text: `已存在啟用中的主群「${existingMain.title}」。本系統只允許 1 個主群，請先在後台停用舊主群再來。`,
+            show_alert: true,
+          });
+          await log({
+            type: "group.set_main_blocked",
+            chatId,
+            payload: { existingMain: Number(existingMain.chatId) },
+          });
+          return;
+        }
+
         try {
           await ctx.api.setChatPermissions(chatId, FULL_MUTE);
         } catch (err) {
@@ -148,8 +173,9 @@ export function registerAutoRegisterHandler(bot: Bot) {
           return;
         }
 
-        const [sub] = await db
-          .select()
+        // 把所有現有 active sub 都收進此 main 的 fan-out 列表
+        const subs = await db
+          .select({ chatId: groups.chatId, title: groups.title })
           .from(groups)
           .where(
             and(
@@ -158,34 +184,38 @@ export function registerAutoRegisterHandler(bot: Bot) {
               ne(groups.chatId, chatId),
             ),
           )
-          .orderBy(desc(groups.id))
-          .limit(1);
+          .orderBy(desc(groups.id));
+
+        const subChatIds = subs.map((s) => Number(s.chatId));
 
         await db
           .update(groups)
           .set({
             type: "main",
-            syncTargetChatId: sub ? Number(sub.chatId) : null,
+            syncTargetChatIds: subChatIds,
+            // 保留舊欄位給沒升級的 code path 使用第一個 sub
+            syncTargetChatId: subChatIds[0] ?? null,
           })
           .where(eq(groups.chatId, chatId));
         clearGroupCache(chatId);
-        if (sub) clearGroupCache(Number(sub.chatId));
+        for (const id of subChatIds) clearGroupCache(id);
 
-        const paired = sub
-          ? `\n🔗 已自動配對子群：<b>${escapeHtml(sub.title)}</b>`
-          : "\n⚠️ 尚無子群，建立子群後會自動配對。";
+        const paired =
+          subs.length > 0
+            ? `\n🔗 已自動配對 ${subs.length} 個子群：${subs.map((s) => escapeHtml(s.title)).join("、")}`
+            : "\n⚠️ 尚無子群，建立子群後會自動配對。";
 
         await editIfMsg(
           ctx,
           chatId,
           `🔇 已設為「主群」並禁言全群${paired}\n\n` +
-            `現在只有 admin 能在此發言。admin 發的訊息會自動同步到子群。`,
+            `現在只有 admin 能在此發言。admin 發的訊息會自動同步到所有子群。`,
         );
         await ctx.answerCallbackQuery({ text: "✅ 已設為主群" });
         await log({
           type: "group.set_main",
           chatId,
-          payload: { pairedWithSub: sub ? Number(sub.chatId) : null },
+          payload: { pairedSubs: subChatIds },
         });
       } else {
         // sub
@@ -197,10 +227,14 @@ export function registerAutoRegisterHandler(bot: Bot) {
 
         await db
           .update(groups)
-          .set({ type: "sub", syncTargetChatId: null })
+          .set({
+            type: "sub",
+            syncTargetChatId: null,
+            syncTargetChatIds: [],
+          })
           .where(eq(groups.chatId, chatId));
 
-        // 找最近的 active main，直接 overwrite 它的 sync target
+        // 找唯一 active main 並把此 sub 的 chat_id APPEND 進它的 syncTargetChatIds
         const [main] = await db
           .select()
           .from(groups)
@@ -211,20 +245,27 @@ export function registerAutoRegisterHandler(bot: Bot) {
               ne(groups.chatId, chatId),
             ),
           )
-          .orderBy(desc(groups.id))
           .limit(1);
 
         if (main) {
+          const existing = main.syncTargetChatIds ?? [];
+          const merged = existing.includes(chatId)
+            ? existing
+            : [...existing, chatId];
           await db
             .update(groups)
-            .set({ syncTargetChatId: chatId })
+            .set({
+              syncTargetChatIds: merged,
+              // 同步維護舊單一欄位（第一個 sub 當代表，供舊 code 用）
+              syncTargetChatId: merged[0] ?? null,
+            })
             .where(eq(groups.chatId, Number(main.chatId)));
           clearGroupCache(Number(main.chatId));
         }
         clearGroupCache(chatId);
 
         const paired = main
-          ? `\n🔗 已自動配對主群：<b>${escapeHtml(main.title)}</b>`
+          ? `\n🔗 已自動加入主群「<b>${escapeHtml(main.title)}</b>」的同步目標清單`
           : "\n⚠️ 尚無主群，建立主群後會自動配對。";
 
         await editIfMsg(

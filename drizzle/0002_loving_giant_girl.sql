@@ -1,0 +1,1 @@
+ALTER TABLE "groups" ADD COLUMN "sync_target_chat_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;

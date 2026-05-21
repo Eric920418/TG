@@ -67,8 +67,13 @@ export const groups = pgTable(
     })
       .notNull()
       .default("strict"),
-    // 連結到對應的同步目標群（主群指到子群）
+    // [DEPRECATED] 舊單一同步目標欄位，保留向後相容；新 code 一律用 syncTargetChatIds
     syncTargetChatId: bigint("sync_target_chat_id", { mode: "number" }),
+    // 連結到所有同步目標子群（主群 fan-out）
+    syncTargetChatIds: jsonb("sync_target_chat_ids")
+      .$type<number[]>()
+      .notNull()
+      .default([]),
     // 防 raid 設定
     raidThreshold: integer("raid_threshold").notNull().default(5),
     raidWindowSec: integer("raid_window_sec").notNull().default(30),

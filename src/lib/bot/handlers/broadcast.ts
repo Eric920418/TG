@@ -15,32 +15,62 @@ export function registerBroadcastHandler(bot: Bot) {
     const group = await getGroupByChatId(ctx.chat.id);
     if (!group || !group.isActive) return next();
     if (group.type !== "main") return next();
-    if (!group.syncTargetChatId) return next();
+
+    // 取目標子群清單：新欄位優先，沒有則 fallback 到舊單一欄位
+    const targets =
+      group.syncTargetChatIds && group.syncTargetChatIds.length > 0
+        ? group.syncTargetChatIds.map(Number)
+        : group.syncTargetChatId != null
+          ? [Number(group.syncTargetChatId)]
+          : [];
+    if (targets.length === 0) return next();
 
     // 只同步 admin 發的訊息
     if (!(await isAdmin(ctx, ctx.chat.id, ctx.from.id))) return next();
-
-    // bot 自己發的不轉
     if (ctx.from.is_bot) return next();
 
     const sourceChatId = ctx.chat.id;
     const sourceMessageId = ctx.message.message_id;
-    const targetChatId = Number(group.syncTargetChatId);
 
-    // 預檢：bot 在目標群必須是 admin / creator，否則 copyMessage 會失敗
-    try {
-      const me = await ctx.api.getChatMember(targetChatId, ctx.me.id);
-      if (me.status !== "administrator" && me.status !== "creator") {
-        const msg = `bot 在目標群 ${targetChatId} 非管理員（status=${me.status}），無法同步`;
-        await db.insert(broadcasts).values({
-          sourceChatId,
-          sourceMessageId,
-          targetChatId,
-          senderUserId: ctx.from.id,
-          senderUsername: ctx.from.username ?? null,
-          success: false,
+    // 原訊息按鈕 + 群組預設按鈕（只計算一次，所有 sub 共用）
+    const sourceKb =
+      ctx.message.reply_markup &&
+      "inline_keyboard" in ctx.message.reply_markup
+        ? ctx.message.reply_markup.inline_keyboard
+        : [];
+    const defaultKb = renderButtons(group.defaultButtons);
+    const mergedKb = mergeKeyboards(sourceKb, defaultKb);
+
+    // 串行處理：每個 target 各自獨立預檢 + copyMessage + 附加按鈕
+    for (const targetChatId of targets) {
+      const baseRow = {
+        sourceChatId,
+        sourceMessageId,
+        targetChatId,
+        senderUserId: ctx.from.id,
+        senderUsername: ctx.from.username ?? null,
+      };
+
+      // 預檢：bot 在目標群必須是 admin / creator
+      let isBotAdmin = false;
+      try {
+        const me = await ctx.api.getChatMember(targetChatId, ctx.me.id);
+        isBotAdmin = me.status === "administrator" || me.status === "creator";
+      } catch (err) {
+        const msg = `預檢失敗（無法 getChatMember 目標群 ${targetChatId}）：${errorMessage(err)}`;
+        await db.insert(broadcasts).values({ ...baseRow, success: false, error: msg });
+        await log({
+          type: "broadcast.precheck_failed",
+          chatId: sourceChatId,
+          userId: ctx.from.id,
           error: msg,
+          payload: { targetChatId, sourceMessageId },
         });
+        continue;
+      }
+      if (!isBotAdmin) {
+        const msg = `bot 在目標群 ${targetChatId} 非管理員，無法同步`;
+        await db.insert(broadcasts).values({ ...baseRow, success: false, error: msg });
         await log({
           type: "broadcast.not_admin",
           chatId: sourceChatId,
@@ -48,94 +78,50 @@ export function registerBroadcastHandler(bot: Bot) {
           error: msg,
           payload: { targetChatId, sourceMessageId },
         });
-        return next();
+        continue;
       }
-    } catch (err) {
-      const msg = `預檢失敗（無法 getChatMember 目標群 ${targetChatId}）：${errorMessage(err)}`;
-      await db.insert(broadcasts).values({
-        sourceChatId,
-        sourceMessageId,
-        targetChatId,
-        senderUserId: ctx.from.id,
-        senderUsername: ctx.from.username ?? null,
-        success: false,
-        error: msg,
-      });
-      await log({
-        type: "broadcast.precheck_failed",
-        chatId: sourceChatId,
-        userId: ctx.from.id,
-        error: msg,
-        payload: { targetChatId, sourceMessageId },
-      });
-      return next();
-    }
 
-    try {
-      const result = await ctx.api.copyMessage(
-        targetChatId,
-        sourceChatId,
-        sourceMessageId,
-      );
+      try {
+        const result = await ctx.api.copyMessage(
+          targetChatId,
+          sourceChatId,
+          sourceMessageId,
+        );
 
-      // 合併「原訊息按鈕」+「群組預設按鈕」
-      const sourceKb =
-        ctx.message.reply_markup &&
-        "inline_keyboard" in ctx.message.reply_markup
-          ? ctx.message.reply_markup.inline_keyboard
-          : [];
-      const defaultKb = renderButtons(group.defaultButtons);
-      const merged = mergeKeyboards(sourceKb, defaultKb);
-
-      if (merged.length > 0) {
-        try {
-          await ctx.api.editMessageReplyMarkup(
-            targetChatId,
-            result.message_id,
-            { reply_markup: { inline_keyboard: merged } },
-          );
-        } catch (err) {
-          // 編輯按鈕失敗不阻塞主流程，但要記錄
-          await log({
-            type: "broadcast.attach_buttons_failed",
-            chatId: sourceChatId,
-            userId: ctx.from.id,
-            error: errorMessage(err),
-            payload: {
+        if (mergedKb.length > 0) {
+          try {
+            await ctx.api.editMessageReplyMarkup(
               targetChatId,
-              targetMessageId: result.message_id,
-            },
-          });
+              result.message_id,
+              { reply_markup: { inline_keyboard: mergedKb } },
+            );
+          } catch (err) {
+            await log({
+              type: "broadcast.attach_buttons_failed",
+              chatId: sourceChatId,
+              userId: ctx.from.id,
+              error: errorMessage(err),
+              payload: { targetChatId, targetMessageId: result.message_id },
+            });
+          }
         }
-      }
 
-      await db.insert(broadcasts).values({
-        sourceChatId,
-        sourceMessageId,
-        targetChatId,
-        targetMessageId: result.message_id,
-        senderUserId: ctx.from.id,
-        senderUsername: ctx.from.username ?? null,
-        success: true,
-      });
-    } catch (err) {
-      const msg = errorMessage(err);
-      await db.insert(broadcasts).values({
-        sourceChatId,
-        sourceMessageId,
-        targetChatId,
-        senderUserId: ctx.from.id,
-        senderUsername: ctx.from.username ?? null,
-        success: false,
-        error: msg,
-      });
-      await log({
-        type: "broadcast.failed",
-        chatId: sourceChatId,
-        userId: ctx.from.id,
-        error: msg,
-        payload: { targetChatId, sourceMessageId },
-      });
+        await db.insert(broadcasts).values({
+          ...baseRow,
+          targetMessageId: result.message_id,
+          success: true,
+        });
+      } catch (err) {
+        const msg = errorMessage(err);
+        await db.insert(broadcasts).values({ ...baseRow, success: false, error: msg });
+        await log({
+          type: "broadcast.failed",
+          chatId: sourceChatId,
+          userId: ctx.from.id,
+          error: msg,
+          payload: { targetChatId, sourceMessageId },
+        });
+      }
     }
 
     return next();

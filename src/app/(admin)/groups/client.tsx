@@ -19,7 +19,8 @@ type Draft = {
   type: "main" | "sub";
   isActive: boolean;
   simplifiedPolicy: "strict" | "off";
-  syncTargetChatId: string;
+  syncTargetChatId: string; // deprecated 保留
+  syncTargetChatIds: number[];
   raidThreshold: string;
   raidWindowSec: string;
   warningLimit: string;
@@ -36,6 +37,7 @@ function emptyDraft(): Draft {
     isActive: true,
     simplifiedPolicy: "strict",
     syncTargetChatId: "",
+    syncTargetChatIds: [],
     raidThreshold: "5",
     raidWindowSec: "30",
     warningLimit: "3",
@@ -54,6 +56,7 @@ function toDraft(g: Group): Draft {
     isActive: g.isActive,
     simplifiedPolicy: g.simplifiedPolicy,
     syncTargetChatId: g.syncTargetChatId != null ? String(g.syncTargetChatId) : "",
+    syncTargetChatIds: (g.syncTargetChatIds ?? []).map(Number),
     raidThreshold: String(g.raidThreshold),
     raidWindowSec: String(g.raidWindowSec),
     warningLimit: String(g.warningLimit),
@@ -67,6 +70,10 @@ export function GroupsClient({ initial }: { initial: Group[] }) {
   const router = useRouter();
   // 直接用 prop，避免 useState 凍住舊資料導致 router.refresh 後列表不更新
   const rows = initial;
+  const subOptions = rows
+    .filter((g) => g.type === "sub" && g.isActive)
+    .map((g) => ({ chatId: Number(g.chatId), title: g.title }));
+  const existingActiveMain = rows.find((g) => g.type === "main" && g.isActive);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -145,6 +152,13 @@ export function GroupsClient({ initial }: { initial: Group[] }) {
                   <option value="main">main（主群，admin 訊息會同步）</option>
                   <option value="sub">sub（子群，可聊天）</option>
                 </select>
+                {draft.type === "main" &&
+                  existingActiveMain &&
+                  existingActiveMain.id !== draft.id && (
+                    <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                      ⚠️ 已有啟用中的主群「{existingActiveMain.title}」。系統只允許 1 個 main，儲存時會被拒。請先停用舊主群。
+                    </p>
+                  )}
               </Field>
               <Field label="簡繁政策">
                 <select
@@ -162,16 +176,53 @@ export function GroupsClient({ initial }: { initial: Group[] }) {
                 </select>
               </Field>
               <Field
-                label="同步目標 Chat ID"
-                hint="主群 → 子群 chat_id。子群不用填"
+                label="同步目標子群（main 限定，多選）"
+                hint="主群發訊息會 fan-out 到此處勾選的所有子群。子群本身不用設這欄。"
               >
-                <Input
-                  value={draft.syncTargetChatId}
-                  onChange={(e) =>
-                    setDraft({ ...draft, syncTargetChatId: e.target.value })
-                  }
-                  placeholder="-1009876543210"
-                />
+                {draft.type === "main" ? (
+                  subOptions.length === 0 ? (
+                    <p className="text-xs text-zinc-500">
+                      尚無啟用中的子群可選。建立子群並設為 sub 後會出現在這。
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+                      {subOptions.map((s) => {
+                        const checked = draft.syncTargetChatIds.includes(s.chatId);
+                        return (
+                          <label
+                            key={s.chatId}
+                            className="flex items-center gap-2 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setDraft({
+                                  ...draft,
+                                  syncTargetChatIds: checked
+                                    ? draft.syncTargetChatIds.filter(
+                                        (id) => id !== s.chatId,
+                                      )
+                                    : [...draft.syncTargetChatIds, s.chatId],
+                                })
+                              }
+                            />
+                            <span className="text-sm">
+                              {s.title}{" "}
+                              <span className="text-xs text-zinc-500 font-mono">
+                                ({s.chatId})
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )
+                ) : (
+                  <p className="text-xs text-zinc-500">
+                    此群為 sub，不需指定同步目標。把上方「類型」改成 main 才會出現選項。
+                  </p>
+                )}
               </Field>
               <Field label="Raid 閾值（X 秒內 N 人加入）">
                 <div className="flex gap-2 items-center">
