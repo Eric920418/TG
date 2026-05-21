@@ -7,6 +7,7 @@ import { LogoutButton } from "./logout-button";
 const navItems = [
   { href: "/", label: "Dashboard" },
   { href: "/posts", label: "排程貼文" },
+  { href: "/templates", label: "按鈕範本" },
   { href: "/questions", label: "認證題庫" },
   { href: "/groups", label: "群組設定" },
   { href: "/keywords", label: "關鍵字守門" },

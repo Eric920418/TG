@@ -7,6 +7,17 @@ import { groups } from "@/lib/db/schema";
 import { clearGroupCache } from "@/lib/bot/group-cache";
 import { requireAdmin, toError, type ActionResult } from "./guard";
 
+const buttonSchema = z.union([
+  z.object({
+    text: z.string().min(1).max(64),
+    url: z.string().url(),
+  }),
+  z.object({
+    text: z.string().min(1).max(64),
+    copyText: z.string().min(1).max(256),
+  }),
+]);
+
 const groupSchema = z.object({
   id: z.number().optional(),
   chatId: z.coerce.number().int(),
@@ -23,6 +34,10 @@ const groupSchema = z.object({
   warningLimit: z.coerce.number().int().min(1).max(10).default(3),
   muteDurationSec: z.coerce.number().int().min(60).max(2592000).default(86400),
   verifyTimeoutSec: z.coerce.number().int().min(30).max(1800).default(300),
+  defaultButtons: z
+    .array(z.array(buttonSchema).max(8))
+    .max(8)
+    .default([]),
 });
 
 export async function upsertGroup(input: unknown): Promise<ActionResult> {
@@ -44,6 +59,7 @@ export async function upsertGroup(input: unknown): Promise<ActionResult> {
           warningLimit: data.warningLimit,
           muteDurationSec: data.muteDurationSec,
           verifyTimeoutSec: data.verifyTimeoutSec,
+          defaultButtons: data.defaultButtons.filter((row) => row.length > 0),
         })
         .where(eq(groups.id, data.id));
     } else {
@@ -59,6 +75,7 @@ export async function upsertGroup(input: unknown): Promise<ActionResult> {
         warningLimit: data.warningLimit,
         muteDurationSec: data.muteDurationSec,
         verifyTimeoutSec: data.verifyTimeoutSec,
+        defaultButtons: data.defaultButtons.filter((row) => row.length > 0),
       });
     }
     clearGroupCache(data.chatId);

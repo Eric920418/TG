@@ -1,15 +1,19 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { ErrorBanner } from "@/components/error-banner";
+import { ButtonEditor } from "@/components/button-editor";
 import { createPost, updatePost } from "@/lib/actions/posts";
-import type { ScheduledPostContent } from "@/lib/db/schema";
+import type {
+  ButtonTemplate,
+  ScheduledPostContent,
+  TgButtonRow,
+} from "@/lib/db/schema";
 
 export type PostFormInitial = {
   id?: number;
@@ -25,6 +29,8 @@ export type GroupOption = {
   type: "main" | "sub";
 };
 
+export type TemplateOption = Pick<ButtonTemplate, "id" | "name" | "buttons">;
+
 function toLocalInputValue(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -36,13 +42,13 @@ function defaultSendAt(): string {
   return toLocalInputValue(d);
 }
 
-type Button = { text: string; url: string };
-
 export function PostForm({
   groups,
+  templates,
   initial,
 }: {
   groups: GroupOption[];
+  templates: TemplateOption[];
   initial?: PostFormInitial;
 }) {
   const router = useRouter();
@@ -55,16 +61,20 @@ export function PostForm({
     initial?.content.disableWebPagePreview ?? false,
   );
   const initialMedia = initial?.content.media?.[0];
-  const [mediaType, setMediaType] = useState<"" | "photo" | "video" | "document" | "animation">(
-    initialMedia?.type ?? "",
-  );
+  const [mediaType, setMediaType] = useState<
+    "" | "photo" | "video" | "document" | "animation"
+  >(initialMedia?.type ?? "");
   const [mediaUrl, setMediaUrl] = useState(initialMedia?.url ?? "");
-  const [buttons, setButtons] = useState<Button[]>(
-    initial?.content.buttons?.[0] ?? [],
+  const [buttons, setButtons] = useState<TgButtonRow[]>(
+    initial?.content.buttons ?? [],
   );
-  const [targets, setTargets] = useState<number[]>(initial?.targetChatIds ?? []);
+  const [targets, setTargets] = useState<number[]>(
+    initial?.targetChatIds ?? [],
+  );
   const [sendAt, setSendAt] = useState<string>(
-    initial?.sendAt ? toLocalInputValue(new Date(initial.sendAt)) : defaultSendAt(),
+    initial?.sendAt
+      ? toLocalInputValue(new Date(initial.sendAt))
+      : defaultSendAt(),
   );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -75,17 +85,22 @@ export function PostForm({
     );
   }
 
+  function applyTemplate(id: string) {
+    if (!id) return;
+    const t = templates.find((x) => String(x.id) === id);
+    if (t) setButtons(t.buttons);
+  }
+
   function submit() {
     setError(null);
+    const cleanedButtons = buttons.filter((row) => row.length > 0);
     const content: ScheduledPostContent = {
       text: text || undefined,
       parseMode: parseMode || undefined,
       disableWebPagePreview: disablePreview || undefined,
       media:
-        mediaType && mediaUrl
-          ? [{ type: mediaType, url: mediaUrl }]
-          : undefined,
-      buttons: buttons.length > 0 ? [buttons] : undefined,
+        mediaType && mediaUrl ? [{ type: mediaType, url: mediaUrl }] : undefined,
+      buttons: cleanedButtons.length > 0 ? cleanedButtons : undefined,
     };
     const payload = {
       id: initial?.id,
@@ -95,7 +110,9 @@ export function PostForm({
       sendAt: new Date(sendAt),
     };
     startTransition(async () => {
-      const res = initial?.id ? await updatePost(payload) : await createPost(payload);
+      const res = initial?.id
+        ? await updatePost(payload)
+        : await createPost(payload);
       if (!res.ok) {
         setError(res.error);
         return;
@@ -158,7 +175,12 @@ export function PostForm({
               value={mediaType}
               onChange={(e) =>
                 setMediaType(
-                  e.target.value as "" | "photo" | "video" | "document" | "animation",
+                  e.target.value as
+                    | ""
+                    | "photo"
+                    | "video"
+                    | "document"
+                    | "animation",
                 )
               }
               className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-950"
@@ -178,50 +200,35 @@ export function PostForm({
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <Label>按鈕（選填，全部連結式）</Label>
-          <div className="space-y-2">
-            {buttons.map((b, i) => (
-              <div key={i} className="flex gap-2">
-                <Input
-                  value={b.text}
-                  onChange={(e) =>
-                    setButtons((bs) =>
-                      bs.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)),
-                    )
-                  }
-                  placeholder="按鈕文字"
-                  className="w-1/3"
-                />
-                <Input
-                  value={b.url}
-                  onChange={(e) =>
-                    setButtons((bs) =>
-                      bs.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)),
-                    )
-                  }
-                  placeholder="https://..."
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setButtons((bs) => bs.filter((_, j) => j !== i))}
+        <div className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <div className="flex items-center justify-between gap-2">
+            <Label>按鈕</Label>
+            {templates.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-zinc-500">套用範本：</span>
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    applyTemplate(e.target.value);
+                    e.target.value = "";
+                  }}
+                  className="h-8 rounded-md border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-950"
                 >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                  <option value="">— 選擇 —</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-            ))}
-            {buttons.length < 5 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setButtons((bs) => [...bs, { text: "", url: "" }])}
-              >
-                <Plus className="h-4 w-4" />
-                新增按鈕
-              </Button>
             )}
           </div>
+          <ButtonEditor
+            value={buttons}
+            onChange={setButtons}
+            hint="支援 URL 按鈕（外開連結）與 Copy Text（點擊複製文字到剪貼簿，如合約地址）"
+          />
         </div>
 
         <div className="space-y-1.5">

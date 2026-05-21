@@ -77,12 +77,26 @@ export const groups = pgTable(
     muteDurationSec: integer("mute_duration_sec").notNull().default(86400),
     // 認證題目秒數限制
     verifyTimeoutSec: integer("verify_timeout_sec").notNull().default(300),
+    // 主群同步到子群時自動附加的預設按鈕（例如「聊天室」）
+    defaultButtons: jsonb("default_buttons")
+      .$type<TgButtonRow[]>()
+      .notNull()
+      .default([]),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (t) => [uniqueIndex("groups_chat_id_idx").on(t.chatId)],
 );
+
+export const buttonTemplates = pgTable("button_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  buttons: jsonb("buttons").$type<TgButtonRow[]>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
 export const questions = pgTable("questions", {
   id: serial("id").primaryKey(),
@@ -223,8 +237,15 @@ export type ScheduledPostContent = {
     url: string;
     caption?: string;
   }>;
-  buttons?: Array<Array<{ text: string; url: string }>>;
+  buttons?: TgButtonRow[];
 };
+
+/** Telegram inline button — 支援 URL 與 Copy Text 兩種類型 */
+export type TgButton =
+  | { text: string; url: string }
+  | { text: string; copyText: string };
+
+export type TgButtonRow = TgButton[];
 
 export type PostResult = {
   chatId: number;
@@ -241,3 +262,4 @@ export type ScheduledPost = typeof scheduledPosts.$inferSelect;
 export type Broadcast = typeof broadcasts.$inferSelect;
 export type KeywordRow = typeof keywordBlacklist.$inferSelect;
 export type ActivityLog = typeof activityLogs.$inferSelect;
+export type ButtonTemplate = typeof buttonTemplates.$inferSelect;

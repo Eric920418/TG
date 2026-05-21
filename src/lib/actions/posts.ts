@@ -8,10 +8,16 @@ import { qstash } from "@/lib/qstash";
 import { env } from "@/lib/env";
 import { requireAdmin, toError, type ActionResult } from "./guard";
 
-const buttonSchema = z.object({
-  text: z.string().min(1).max(64),
-  url: z.string().url(),
-});
+const buttonSchema = z.union([
+  z.object({
+    text: z.string().min(1).max(64),
+    url: z.string().url(),
+  }),
+  z.object({
+    text: z.string().min(1).max(64),
+    copyText: z.string().min(1).max(256),
+  }),
+]);
 
 const contentSchema = z.object({
   text: z.string().optional(),

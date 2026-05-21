@@ -1,16 +1,12 @@
-import { InlineKeyboard } from "grammy";
 import { getBot } from "@/lib/bot";
 import type { ScheduledPostContent, PostResult } from "@/lib/db/schema";
+import { renderButtons } from "@/lib/buttons";
 import { errorMessage } from "@/lib/log";
 
 function buildKeyboard(content: ScheduledPostContent) {
-  if (!content.buttons || content.buttons.length === 0) return undefined;
-  const kb = new InlineKeyboard();
-  content.buttons.forEach((row, i) => {
-    if (i > 0) kb.row();
-    row.forEach((btn) => kb.url(btn.text, btn.url));
-  });
-  return kb;
+  const inline = renderButtons(content.buttons);
+  if (inline.length === 0) return undefined;
+  return { inline_keyboard: inline };
 }
 
 export async function sendPostToChats(

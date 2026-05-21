@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { broadcasts } from "@/lib/db/schema";
 import { getGroupByChatId } from "@/lib/bot/group-cache";
 import { isAdmin } from "@/lib/bot/admin-check";
+import { renderButtons, mergeKeyboards } from "@/lib/buttons";
 import { log, errorMessage } from "@/lib/log";
 
 export function registerBroadcastHandler(bot: Bot) {
@@ -76,6 +77,38 @@ export function registerBroadcastHandler(bot: Bot) {
         sourceChatId,
         sourceMessageId,
       );
+
+      // 合併「原訊息按鈕」+「群組預設按鈕」
+      const sourceKb =
+        ctx.message.reply_markup &&
+        "inline_keyboard" in ctx.message.reply_markup
+          ? ctx.message.reply_markup.inline_keyboard
+          : [];
+      const defaultKb = renderButtons(group.defaultButtons);
+      const merged = mergeKeyboards(sourceKb, defaultKb);
+
+      if (merged.length > 0) {
+        try {
+          await ctx.api.editMessageReplyMarkup(
+            targetChatId,
+            result.message_id,
+            { reply_markup: { inline_keyboard: merged } },
+          );
+        } catch (err) {
+          // 編輯按鈕失敗不阻塞主流程，但要記錄
+          await log({
+            type: "broadcast.attach_buttons_failed",
+            chatId: sourceChatId,
+            userId: ctx.from.id,
+            error: errorMessage(err),
+            payload: {
+              targetChatId,
+              targetMessageId: result.message_id,
+            },
+          });
+        }
+      }
+
       await db.insert(broadcasts).values({
         sourceChatId,
         sourceMessageId,
