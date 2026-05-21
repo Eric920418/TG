@@ -6,15 +6,8 @@ import { getGroupByChatId } from "@/lib/bot/group-cache";
 import { isAdmin } from "@/lib/bot/admin-check";
 import { log, errorMessage } from "@/lib/log";
 
-const TTL_MS = 30_000;
-const cache = new Map<number, { rows: KeywordRow[]; expires: number }>();
-
 async function loadKeywords(chatId: number): Promise<KeywordRow[]> {
-  const now = Date.now();
-  const cached = cache.get(chatId);
-  if (cached && cached.expires > now) return cached.rows;
-
-  const rows = await db
+  return db
     .select()
     .from(keywordBlacklist)
     .where(
@@ -26,14 +19,11 @@ async function loadKeywords(chatId: number): Promise<KeywordRow[]> {
         ),
       ),
     );
-
-  cache.set(chatId, { rows, expires: now + TTL_MS });
-  return rows;
 }
 
-export function clearKeywordCache(chatId?: number) {
-  if (chatId == null) cache.clear();
-  else cache.delete(chatId);
+/** no-op，向後相容 (cache 已移除) */
+export function clearKeywordCache(_chatId?: number): void {
+  void _chatId;
 }
 
 function matches(text: string, row: KeywordRow): boolean {

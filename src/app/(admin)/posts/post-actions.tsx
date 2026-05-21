@@ -1,12 +1,14 @@
 "use client";
 import Link from "next/link";
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Pencil, Trash2, X } from "lucide-react";
 import { cancelPost, deletePost } from "@/lib/actions/posts";
 import { ErrorBanner } from "@/components/error-banner";
 
 export function PostActions({ postId, status }: { postId: number; status: string }) {
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -16,7 +18,7 @@ export function PostActions({ postId, status }: { postId: number; status: string
     startTransition(async () => {
       const res = await cancelPost(postId);
       if (!res.ok) setError(res.error);
-      else location.reload();
+      else router.refresh();
     });
   }
 
@@ -26,7 +28,7 @@ export function PostActions({ postId, status }: { postId: number; status: string
     startTransition(async () => {
       const res = await deletePost(postId);
       if (!res.ok) setError(res.error);
-      else location.reload();
+      else router.refresh();
     });
   }
 

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,6 +60,7 @@ function toDraft(g: Group): Draft {
 }
 
 export function GroupsClient({ initial }: { initial: Group[] }) {
+  const router = useRouter();
   const [rows] = useState<Group[]>(initial);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +76,7 @@ export function GroupsClient({ initial }: { initial: Group[] }) {
         return;
       }
       setDraft(null);
-      location.reload();
+      router.refresh();
     });
   }
 
@@ -87,7 +89,7 @@ export function GroupsClient({ initial }: { initial: Group[] }) {
         setError(res.error);
         return;
       }
-      location.reload();
+      router.refresh();
     });
   }
 

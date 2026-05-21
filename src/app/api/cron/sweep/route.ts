@@ -4,13 +4,13 @@ import { scheduledPosts } from "@/lib/db/schema";
 import { sendPostToChats } from "@/lib/post-sender";
 import { env } from "@/lib/env";
 import { log, errorMessage } from "@/lib/log";
+import { authorizedBearer } from "@/lib/secret-compare";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function authorized(req: Request): boolean {
-  const auth = req.headers.get("authorization");
-  return auth === `Bearer ${env().CRON_SECRET}`;
+  return authorizedBearer(req, env().CRON_SECRET);
 }
 
 export async function GET(req: Request): Promise<Response> {
@@ -26,12 +26,22 @@ export async function GET(req: Request): Promise<Response> {
 
   let executed = 0;
   let failed = 0;
+  let skipped = 0;
 
   for (const row of rows) {
-    await db
+    // CAS：搶 pending → sending；搶不到代表 QStash 已執行
+    const claimed = await db
       .update(scheduledPosts)
       .set({ status: "sending", updatedAt: new Date() })
-      .where(eq(scheduledPosts.id, row.id));
+      .where(
+        and(eq(scheduledPosts.id, row.id), eq(scheduledPosts.status, "pending")),
+      )
+      .returning({ id: scheduledPosts.id });
+
+    if (claimed.length === 0) {
+      skipped++;
+      continue;
+    }
 
     try {
       const results = await sendPostToChats(row.content, row.targetChatIds);
@@ -64,5 +74,5 @@ export async function GET(req: Request): Promise<Response> {
     }
   }
 
-  return Response.json({ ok: true, executed, failed, total: rows.length });
+  return Response.json({ ok: true, executed, failed, skipped, total: rows.length });
 }

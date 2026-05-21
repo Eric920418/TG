@@ -4,7 +4,11 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { admins } from "@/lib/db/schema";
 import { env } from "@/lib/env";
+import { redis } from "@/lib/redis";
 import { log, errorMessage } from "@/lib/log";
+
+const RATE_LIMIT = 5; // 每分鐘最多 5 次
+const RATE_WINDOW_SEC = 60;
 
 export function registerLoginHandler(bot: Bot) {
   bot.command(["login", "start"], async (ctx) => {
@@ -12,6 +16,33 @@ export function registerLoginHandler(bot: Bot) {
     if (ctx.chat?.type !== "private") {
       await ctx.reply("請私訊 bot 使用 /login 取得登入連結").catch(() => {});
       return;
+    }
+
+    // Rate limit per telegram_id
+    try {
+      const key = `login:rl:${ctx.from.id}`;
+      const count = await redis().incr(key);
+      if (count === 1) {
+        await redis().expire(key, RATE_WINDOW_SEC);
+      }
+      if (count > RATE_LIMIT) {
+        await ctx
+          .reply(`⏳ 太頻繁了，請 ${RATE_WINDOW_SEC} 秒後再試。`)
+          .catch(() => {});
+        await log({
+          type: "login.rate_limited",
+          userId: ctx.from.id,
+          payload: { count },
+        });
+        return;
+      }
+    } catch (err) {
+      // Redis 故障不應阻擋登入，記錄後繼續
+      await log({
+        type: "login.rate_limit_check_failed",
+        userId: ctx.from.id,
+        error: errorMessage(err),
+      });
     }
 
     try {

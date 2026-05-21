@@ -26,6 +26,50 @@ export function registerBroadcastHandler(bot: Bot) {
     const sourceMessageId = ctx.message.message_id;
     const targetChatId = Number(group.syncTargetChatId);
 
+    // 預檢：bot 在目標群必須是 admin / creator，否則 copyMessage 會失敗
+    try {
+      const me = await ctx.api.getChatMember(targetChatId, ctx.me.id);
+      if (me.status !== "administrator" && me.status !== "creator") {
+        const msg = `bot 在目標群 ${targetChatId} 非管理員（status=${me.status}），無法同步`;
+        await db.insert(broadcasts).values({
+          sourceChatId,
+          sourceMessageId,
+          targetChatId,
+          senderUserId: ctx.from.id,
+          senderUsername: ctx.from.username ?? null,
+          success: false,
+          error: msg,
+        });
+        await log({
+          type: "broadcast.not_admin",
+          chatId: sourceChatId,
+          userId: ctx.from.id,
+          error: msg,
+          payload: { targetChatId, sourceMessageId },
+        });
+        return next();
+      }
+    } catch (err) {
+      const msg = `預檢失敗（無法 getChatMember 目標群 ${targetChatId}）：${errorMessage(err)}`;
+      await db.insert(broadcasts).values({
+        sourceChatId,
+        sourceMessageId,
+        targetChatId,
+        senderUserId: ctx.from.id,
+        senderUsername: ctx.from.username ?? null,
+        success: false,
+        error: msg,
+      });
+      await log({
+        type: "broadcast.precheck_failed",
+        chatId: sourceChatId,
+        userId: ctx.from.id,
+        error: msg,
+        payload: { targetChatId, sourceMessageId },
+      });
+      return next();
+    }
+
     try {
       const result = await ctx.api.copyMessage(
         targetChatId,

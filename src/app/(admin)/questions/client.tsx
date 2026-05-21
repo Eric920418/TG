@@ -1,5 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Trash2, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,7 @@ function emptyDraft(): Draft {
 }
 
 export function QuestionsClient({ initial }: { initial: Question[] }) {
+  const router = useRouter();
   const [rows, setRows] = useState<Question[]>(initial);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,8 +62,7 @@ export function QuestionsClient({ initial }: { initial: Question[] }) {
         return;
       }
       setDraft(null);
-      // 重新整理：refresh server data via location reload
-      location.reload();
+      router.refresh();
     });
   }
 
@@ -74,6 +75,7 @@ export function QuestionsClient({ initial }: { initial: Question[] }) {
         setError(res.error);
         return;
       }
+      // 只在成功後才更新 UI（C6 樂觀刪除修正）
       setRows((r) => r.filter((row) => row.id !== id));
     });
   }

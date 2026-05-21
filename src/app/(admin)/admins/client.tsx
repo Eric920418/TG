@@ -1,5 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,7 @@ export function AdminsClient({
   initial: Admin[];
   isOwner: boolean;
 }) {
+  const router = useRouter();
   const [rows] = useState<Admin[]>(initial);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +46,7 @@ export function AdminsClient({
         return;
       }
       setDraft(null);
-      location.reload();
+      router.refresh();
     });
   }
 
@@ -57,7 +59,7 @@ export function AdminsClient({
         setError(res.error);
         return;
       }
-      location.reload();
+      router.refresh();
     });
   }
 

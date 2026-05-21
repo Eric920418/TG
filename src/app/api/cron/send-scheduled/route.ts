@@ -1,10 +1,11 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { scheduledPosts } from "@/lib/db/schema";
 import { verifyQstashSignature } from "@/lib/qstash";
 import { sendPostToChats } from "@/lib/post-sender";
 import { env } from "@/lib/env";
 import { log, errorMessage } from "@/lib/log";
+import { authorizedBearer } from "@/lib/secret-compare";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,28 +18,30 @@ async function authorized(req: Request, body: string): Promise<boolean> {
     // Vercel 部署後 url 應該已經是 https 公網位址
     return verifyQstashSignature(sig, body, url.toString());
   }
-  // sweep 內部呼叫：用 CRON_SECRET
-  const auth = req.headers.get("authorization");
-  if (auth === `Bearer ${env().CRON_SECRET}`) return true;
-  return false;
+  // sweep 內部呼叫：用 CRON_SECRET (timing-safe)
+  return authorizedBearer(req, env().CRON_SECRET);
 }
 
-async function executePost(postId: number): Promise<{ ok: boolean; error?: string }> {
-  const [row] = await db
-    .select()
-    .from(scheduledPosts)
-    .where(eq(scheduledPosts.id, postId))
-    .limit(1);
-
-  if (!row) return { ok: false, error: `post ${postId} not found` };
-  if (row.status !== "pending") {
-    return { ok: false, error: `status is ${row.status}` };
-  }
-
-  await db
+async function executePost(
+  postId: number,
+): Promise<{ ok: boolean; error?: string; skipped?: boolean }> {
+  // CAS：原子搶 pending → sending；搶不到代表另一個 worker 已處理
+  const claimed = await db
     .update(scheduledPosts)
     .set({ status: "sending", updatedAt: new Date() })
-    .where(eq(scheduledPosts.id, postId));
+    .where(
+      and(eq(scheduledPosts.id, postId), eq(scheduledPosts.status, "pending")),
+    )
+    .returning({
+      id: scheduledPosts.id,
+      content: scheduledPosts.content,
+      targetChatIds: scheduledPosts.targetChatIds,
+    });
+
+  if (claimed.length === 0) {
+    return { ok: true, skipped: true };
+  }
+  const row = claimed[0];
 
   try {
     const results = await sendPostToChats(row.content, row.targetChatIds);

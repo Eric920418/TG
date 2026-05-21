@@ -1,13 +1,14 @@
 import { webhookCallback } from "grammy";
 import { getBot } from "@/lib/bot";
 import { env } from "@/lib/env";
+import { safeEqual } from "@/lib/secret-compare";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function handlePOST(req: Request): Promise<Response> {
   const secret = req.headers.get("x-telegram-bot-api-secret-token");
-  if (secret !== env().TELEGRAM_WEBHOOK_SECRET) {
+  if (!safeEqual(secret, env().TELEGRAM_WEBHOOK_SECRET)) {
     return new Response("unauthorized", { status: 401 });
   }
   const bot = await getBot();

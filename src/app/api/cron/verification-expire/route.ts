@@ -2,13 +2,13 @@ import { env } from "@/lib/env";
 import { getBot } from "@/lib/bot";
 import { expirePendingVerifications } from "@/lib/bot/handlers/verify";
 import { log, errorMessage } from "@/lib/log";
+import { authorizedBearer } from "@/lib/secret-compare";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function authorized(req: Request): boolean {
-  const auth = req.headers.get("authorization");
-  return auth === `Bearer ${env().CRON_SECRET}`;
+  return authorizedBearer(req, env().CRON_SECRET);
 }
 
 export async function GET(req: Request): Promise<Response> {

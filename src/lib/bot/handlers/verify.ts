@@ -142,23 +142,33 @@ export function registerVerifyHandlers(bot: Bot) {
     const pendingId = Number(idPart);
     const answerIdx = Number(idxPart);
 
-    const [pending] = await db
+    // 先 peek 看是不是自己的題目（不刪除）
+    const [peek] = await db
       .select()
       .from(pendingVerifications)
       .where(eq(pendingVerifications.id, pendingId))
       .limit(1);
 
-    if (!pending) {
+    if (!peek) {
       await ctx.answerCallbackQuery({ text: "驗證已失效", show_alert: false });
       return;
     }
-
-    // 只允許目標用戶答題
-    if (ctx.from.id !== pending.userId) {
+    if (ctx.from.id !== peek.userId) {
       await ctx.answerCallbackQuery({
         text: "這不是你的題目",
         show_alert: false,
       });
+      return;
+    }
+
+    // 原子 DELETE RETURNING：搶得到才處理（與 cron 過期清理互斥）
+    const [pending] = await db
+      .delete(pendingVerifications)
+      .where(eq(pendingVerifications.id, pendingId))
+      .returning();
+
+    if (!pending) {
+      await ctx.answerCallbackQuery({ text: "驗證已失效", show_alert: false });
       return;
     }
 
@@ -210,9 +220,7 @@ export function registerVerifyHandlers(bot: Bot) {
         await ctx.answerCallbackQuery({ text: "❌ 答錯，已移出群組" });
       }
     } finally {
-      await db
-        .delete(pendingVerifications)
-        .where(eq(pendingVerifications.id, pendingId));
+      // pending 已在前面原子 DELETE，這裡只記 log
       await log({
         type: correct ? "verify.passed" : "verify.failed",
         chatId,

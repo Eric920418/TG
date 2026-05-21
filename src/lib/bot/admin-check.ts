@@ -2,7 +2,8 @@ import type { Context } from "grammy";
 
 type Entry = { isAdmin: boolean; expires: number };
 const cache = new Map<string, Entry>();
-const TTL_MS = 60_000;
+// 短 TTL 平衡「getChatMember 不要每訊息打」與「admin 降權能快速感知」
+const TTL_MS = 10_000;
 
 function key(chatId: number, userId: number): string {
   return `${chatId}:${userId}`;
