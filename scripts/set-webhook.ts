@@ -19,6 +19,8 @@ async function main() {
       allowed_updates: [
         "message",
         "edited_message",
+        "channel_post",
+        "edited_channel_post",
         "callback_query",
         "chat_member",
         "my_chat_member",
@@ -32,7 +34,7 @@ async function main() {
     process.exit(1);
   }
   console.log(`✅ Webhook 已設定 → ${url}`);
-  console.log("  allowed_updates: message, edited_message, callback_query, chat_member, my_chat_member");
+  console.log("  allowed_updates: message, edited_message, channel_post, edited_channel_post, callback_query, chat_member, my_chat_member");
   console.log("  注意: chat_member 需要 bot 是群組 admin 才會收到");
 }
 

@@ -76,7 +76,34 @@ export function registerAutoRegisterHandler(bot: Bot) {
     const wasIn = oldStatus === "member" || oldStatus === "administrator";
     const isOut = newStatus === "left" || newStatus === "kicked";
 
-    // 加入 or 升為 admin 才走「自動註冊 + 詢問類型」流程
+    // Channel：自動標為 main、跳過按鈕詢問（channel 本來就 admin-only）
+    if (chat.type === "channel") {
+      if (wasOut && (isMember || isAdmin)) {
+        await upsertGroup(chat.id, chatTitle(chat));
+        await autoSetChannelAsMain(ctx, chat.id);
+      } else if (becameAdmin) {
+        await upsertGroup(chat.id, chatTitle(chat));
+        await autoSetChannelAsMain(ctx, chat.id);
+      } else if (wasIn && isOut) {
+        try {
+          await db
+            .update(groups)
+            .set({ isActive: false })
+            .where(eq(groups.chatId, chat.id));
+          clearGroupCache(chat.id);
+          await log({ type: "group.bot_removed", chatId: chat.id });
+        } catch (err) {
+          await log({
+            type: "group.bot_remove_failed",
+            chatId: chat.id,
+            error: errorMessage(err),
+          });
+        }
+      }
+      return;
+    }
+
+    // Group / Supergroup：加入 → 自動註冊 + 詢問按鈕
     if (wasOut && (isMember || isAdmin)) {
       await upsertGroup(chat.id, chatTitle(chat));
       await welcome(ctx, chat.id, isAdmin);
@@ -352,6 +379,102 @@ async function migrateChatId(oldId: number, newId: number): Promise<void> {
       chatId: newId,
       error: errorMessage(err),
       payload: { from: oldId },
+    });
+  }
+}
+
+/**
+ * Channel 加入時直接設為 main：跳過按鈕詢問、跳過禁言（channel 本來就 admin-only）。
+ * 規則：最多 1 個 active main；若已有別的 main，channel 變 inactive 待人處理。
+ */
+async function autoSetChannelAsMain(ctx: Context, chatId: number): Promise<void> {
+  try {
+    const [existingMain] = await db
+      .select({ chatId: groups.chatId, title: groups.title })
+      .from(groups)
+      .where(
+        and(
+          eq(groups.type, "main"),
+          eq(groups.isActive, true),
+          ne(groups.chatId, chatId),
+        ),
+      )
+      .limit(1);
+
+    if (existingMain) {
+      // 衝突：channel 暫不啟用，通知（透過 channel 發訊）
+      await db
+        .update(groups)
+        .set({ type: "main", isActive: false })
+        .where(eq(groups.chatId, chatId));
+      clearGroupCache(chatId);
+      await ctx.api
+        .sendMessage(
+          chatId,
+          `⚠️ 已存在啟用中的主群「${escapeHtml(existingMain.title)}」。\n` +
+            `本 channel 已註冊但暫設為「停用」。請到後台先停用舊主群、再把這個 channel 改為啟用。`,
+        )
+        .catch(() => {});
+      await log({
+        type: "group.channel_main_blocked",
+        chatId,
+        payload: { existingMain: Number(existingMain.chatId) },
+      });
+      return;
+    }
+
+    // 收集所有 active sub 進 fan-out
+    const subs = await db
+      .select({ chatId: groups.chatId, title: groups.title })
+      .from(groups)
+      .where(
+        and(
+          eq(groups.type, "sub"),
+          eq(groups.isActive, true),
+          ne(groups.chatId, chatId),
+        ),
+      )
+      .orderBy(desc(groups.id));
+
+    const subChatIds = subs.map((s) => Number(s.chatId));
+
+    await db
+      .update(groups)
+      .set({
+        type: "main",
+        isActive: true,
+        syncTargetChatIds: subChatIds,
+        syncTargetChatId: subChatIds[0] ?? null,
+      })
+      .where(eq(groups.chatId, chatId));
+    clearGroupCache(chatId);
+    for (const id of subChatIds) clearGroupCache(id);
+
+    const paired =
+      subs.length > 0
+        ? `\n\n🔗 已自動配對 ${subs.length} 個子群：${subs.map((s) => escapeHtml(s.title)).join("、")}`
+        : "\n\n⚠️ 尚無子群，建立子群後會自動配對。";
+
+    await ctx.api
+      .sendMessage(
+        chatId,
+        `📣 已自動註冊為「主群」(Channel 模式)${paired}\n\n` +
+          `此 Channel 的貼文會自動同步到所有子群。需要的權限：` +
+          `<b>Post Messages</b>、<b>Delete Messages</b>。`,
+        { parse_mode: "HTML" },
+      )
+      .catch(() => {});
+
+    await log({
+      type: "group.channel_set_main",
+      chatId,
+      payload: { pairedSubs: subChatIds },
+    });
+  } catch (err) {
+    await log({
+      type: "group.channel_set_main_failed",
+      chatId,
+      error: errorMessage(err),
     });
   }
 }
