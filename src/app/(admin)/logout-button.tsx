@@ -1,18 +1,16 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export function LogoutButton() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-
   return (
     <Button
       variant="ghost"
       size="sm"
-      className="justify-start mt-2"
       disabled={loading}
       onClick={async () => {
         setLoading(true);
@@ -22,7 +20,7 @@ export function LogoutButton() {
       }}
     >
       <LogOut className="h-4 w-4" />
-      登出
+      <span className="hidden sm:inline">登出</span>
     </Button>
   );
 }
