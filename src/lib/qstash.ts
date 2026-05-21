@@ -6,7 +6,8 @@ let cachedReceiver: Receiver | null = null;
 
 export function qstash(): Client {
   if (cachedClient) return cachedClient;
-  cachedClient = new Client({ token: env().QSTASH_TOKEN });
+  const e = env();
+  cachedClient = new Client({ token: e.QSTASH_TOKEN, baseUrl: e.QSTASH_URL });
   return cachedClient;
 }
 
