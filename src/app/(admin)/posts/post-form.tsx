@@ -9,11 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ErrorBanner } from "@/components/error-banner";
 import { ButtonEditor } from "@/components/button-editor";
 import { createPost, updatePost } from "@/lib/actions/posts";
-import type {
-  ButtonTemplate,
-  ScheduledPostContent,
-  TgButtonRow,
-} from "@/lib/db/schema";
+import type { ScheduledPostContent, TgButtonRow } from "@/lib/db/schema";
 
 export type PostFormInitial = {
   id?: number;
@@ -29,8 +25,6 @@ export type GroupOption = {
   type: "main" | "sub";
 };
 
-export type TemplateOption = Pick<ButtonTemplate, "id" | "name" | "buttons">;
-
 function toLocalInputValue(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -44,11 +38,9 @@ function defaultSendAt(): string {
 
 export function PostForm({
   groups,
-  templates,
   initial,
 }: {
   groups: GroupOption[];
-  templates: TemplateOption[];
   initial?: PostFormInitial;
 }) {
   const router = useRouter();
@@ -83,12 +75,6 @@ export function PostForm({
     setTargets((t) =>
       t.includes(chatId) ? t.filter((c) => c !== chatId) : [...t, chatId],
     );
-  }
-
-  function applyTemplate(id: string) {
-    if (!id) return;
-    const t = templates.find((x) => String(x.id) === id);
-    if (t) setButtons(t.buttons);
   }
 
   function submit() {
@@ -201,29 +187,7 @@ export function PostForm({
         </div>
 
         <div className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-          <div className="flex items-center justify-between gap-2">
-            <Label>按鈕</Label>
-            {templates.length > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-zinc-500">套用範本：</span>
-                <select
-                  defaultValue=""
-                  onChange={(e) => {
-                    applyTemplate(e.target.value);
-                    e.target.value = "";
-                  }}
-                  className="h-8 rounded-md border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-950"
-                >
-                  <option value="">— 選擇 —</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
+          <Label>按鈕</Label>
           <ButtonEditor
             value={buttons}
             onChange={setButtons}

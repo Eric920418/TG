@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { buttonTemplates, groups, scheduledPosts } from "@/lib/db/schema";
+import { groups, scheduledPosts } from "@/lib/db/schema";
 import { PostForm } from "../post-form";
 
 export const dynamic = "force-dynamic";
@@ -22,21 +22,11 @@ export default async function EditPostPage({
     .limit(1);
   if (!row) notFound();
 
-  const [allGroups, templates] = await Promise.all([
-    db
-      .select()
-      .from(groups)
-      .where(eq(groups.isActive, true))
-      .orderBy(desc(groups.id)),
-    db
-      .select({
-        id: buttonTemplates.id,
-        name: buttonTemplates.name,
-        buttons: buttonTemplates.buttons,
-      })
-      .from(buttonTemplates)
-      .orderBy(desc(buttonTemplates.id)),
-  ]);
+  const allGroups = await db
+    .select()
+    .from(groups)
+    .where(eq(groups.isActive, true))
+    .orderBy(desc(groups.id));
 
   const activeChatIds = new Set(allGroups.map((g) => Number(g.chatId)));
   const inactiveChatIds = row.targetChatIds.filter(
@@ -65,7 +55,6 @@ export default async function EditPostPage({
           title: g.title,
           type: g.type,
         }))}
-        templates={templates}
         initial={{
           id: row.id,
           title: row.title,
