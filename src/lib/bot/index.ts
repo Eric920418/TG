@@ -7,6 +7,7 @@ import { registerKeywordHandler } from "./handlers/keyword";
 import { registerRaidHandler } from "./handlers/raid";
 import { registerBroadcastHandler } from "./handlers/broadcast";
 import { registerLeaveMonitor } from "./handlers/leave-monitor";
+import { registerLoginHandler } from "./handlers/login";
 import { log, errorMessage } from "@/lib/log";
 
 let cached: Bot | null = null;
@@ -34,7 +35,8 @@ export async function getBot(): Promise<Bot> {
       console.error("[bot.catch]", err);
     });
 
-    // Handler 順序很重要：認證 → raid → 簡繁 → 關鍵字 → 同步
+    // Handler 順序很重要：login DM → 認證 → raid → 簡繁 → 關鍵字 → 同步
+    registerLoginHandler(cached);
     registerVerifyHandlers(cached);
     registerRaidHandler(cached);
     registerLeaveMonitor(cached);
