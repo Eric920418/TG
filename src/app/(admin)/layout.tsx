@@ -4,13 +4,30 @@ import { headers } from "next/headers";
 import { getSession } from "@/lib/auth/session";
 import { LogoutButton } from "./logout-button";
 
-const navItems = [
+type NavItem = { href: string; label: string; highlight?: boolean };
+
+const navItems: NavItem[] = [
   { href: "/", label: "Dashboard" },
   { href: "/posts", label: "排程貼文" },
   { href: "/questions", label: "認證題庫" },
   { href: "/groups", label: "群組設定" },
   { href: "/keywords", label: "關鍵字守門" },
+  { href: "/upgrade", label: "⭐ 升級", highlight: true },
 ];
+
+function navItemClasses(highlight?: boolean): string {
+  if (highlight) {
+    return "rounded-md px-3 py-1.5 text-sm font-medium bg-gradient-to-r from-amber-100 to-amber-200 text-amber-900 hover:from-amber-200 hover:to-amber-300 dark:from-amber-900/40 dark:to-amber-700/40 dark:text-amber-100 dark:hover:from-amber-800/50 transition-colors";
+  }
+  return "rounded-md px-3 py-1.5 text-sm text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50";
+}
+
+function navItemClassesMobile(highlight?: boolean): string {
+  if (highlight) {
+    return "whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium bg-gradient-to-r from-amber-100 to-amber-200 text-amber-900 dark:from-amber-900/40 dark:to-amber-700/40 dark:text-amber-100";
+  }
+  return "whitespace-nowrap rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800";
+}
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const hdrs = await headers();
@@ -35,7 +52,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="rounded-md px-3 py-1.5 text-sm text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+                  className={navItemClasses(item.highlight)}
                 >
                   {item.label}
                 </Link>
@@ -54,7 +71,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Link
               key={item.href}
               href={item.href}
-              className="whitespace-nowrap rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              className={navItemClassesMobile(item.highlight)}
             >
               {item.label}
             </Link>

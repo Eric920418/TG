@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowRight, Sparkles } from "lucide-react";
 import { count, desc, eq, gte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -9,6 +10,8 @@ import {
   warnings,
 } from "@/lib/db/schema";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { UpsellCardMini } from "@/components/upsell-card";
+import { upsellFeatures } from "@/lib/upsell-features";
 
 export const dynamic = "force-dynamic";
 
@@ -118,6 +121,33 @@ export default async function DashboardPage() {
               ))}
             </ul>
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-amber-200 bg-gradient-to-br from-amber-50/40 to-transparent dark:border-amber-900/40 dark:from-amber-950/10">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            <CardTitle className="text-base">還能加購這些功能</CardTitle>
+          </div>
+          <CardDescription>
+            進階套餐可單獨開通；聯絡開發者討論你需要的組合
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {upsellFeatures.map((f) => (
+              <UpsellCardMini key={f.id} feature={f} />
+            ))}
+          </div>
+          <div className="mt-4 flex justify-end">
+            <Link
+              href="/upgrade"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
+            >
+              看完整升級方案 <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </div>
