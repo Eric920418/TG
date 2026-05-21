@@ -1,15 +1,45 @@
-import type { Bot } from "grammy";
-import { eq } from "drizzle-orm";
+import { InlineKeyboard, type Bot, type Context } from "grammy";
+import { and, desc, eq, isNull, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { groups } from "@/lib/db/schema";
 import { clearGroupCache } from "@/lib/bot/group-cache";
 import { log, errorMessage } from "@/lib/log";
 
+const CB_PREFIX = "grp:";
+
+const FULL_MUTE = {
+  can_send_messages: false,
+  can_send_audios: false,
+  can_send_documents: false,
+  can_send_photos: false,
+  can_send_videos: false,
+  can_send_video_notes: false,
+  can_send_voice_notes: false,
+  can_send_polls: false,
+  can_send_other_messages: false,
+  can_add_web_page_previews: false,
+  can_invite_users: false,
+} as const;
+
+const FULL_OPEN = {
+  can_send_messages: true,
+  can_send_audios: true,
+  can_send_documents: true,
+  can_send_photos: true,
+  can_send_videos: true,
+  can_send_video_notes: true,
+  can_send_voice_notes: true,
+  can_send_polls: true,
+  can_send_other_messages: true,
+  can_add_web_page_previews: true,
+  can_invite_users: true,
+} as const;
+
 export function registerAutoRegisterHandler(bot: Bot) {
+  // bot 加入 / 升降級 / 被踢
   bot.on("my_chat_member", async (ctx) => {
     const upd = ctx.myChatMember;
     if (!upd) return;
-
     const chat = ctx.chat;
     if (
       chat.type !== "group" &&
@@ -23,60 +53,21 @@ export function registerAutoRegisterHandler(bot: Bot) {
     const newStatus = upd.new_chat_member.status;
 
     const wasOut = oldStatus === "left" || oldStatus === "kicked";
-    const isIn = newStatus === "member" || newStatus === "administrator";
-    const wasIn =
-      oldStatus === "member" || oldStatus === "administrator";
+    const isMember = newStatus === "member";
+    const isAdmin = newStatus === "administrator";
+    const becameAdmin = oldStatus !== "administrator" && isAdmin;
+    const wasIn = oldStatus === "member" || oldStatus === "administrator";
     const isOut = newStatus === "left" || newStatus === "kicked";
 
-    // bot 加入 / 從非成員 → 成員
-    if (wasOut && isIn) {
-      const title = "title" in chat ? chat.title : `chat_${chat.id}`;
-      try {
-        await db
-          .insert(groups)
-          .values({
-            chatId: chat.id,
-            title,
-            type: "sub",
-            isActive: true,
-          })
-          .onConflictDoUpdate({
-            target: groups.chatId,
-            set: { title, isActive: true },
-          });
-
-        clearGroupCache(chat.id);
-
-        await ctx.api
-          .sendMessage(
-            chat.id,
-            `✅ 已自動註冊到管理後台\n\n` +
-              `chat_id: <code>${chat.id}</code>\n` +
-              `預設類型: <b>sub</b> (子群，可聊天)\n\n` +
-              `請到後台「群組設定」調整：\n` +
-              `• 若這是主群（admin-only 廣播）→ 改 type=main\n` +
-              `• 若這是子群（同步收主群訊息）→ 留 sub，但需在主群設定 sync_target_chat_id\n\n` +
-              `Bot 還需要管理員權限：Delete Messages / Restrict Members / Ban Users`,
-            { parse_mode: "HTML" },
-          )
-          .catch(() => {});
-
-        await log({
-          type: "group.auto_registered",
-          chatId: chat.id,
-          payload: { title, status: newStatus, chatType: chat.type },
-        });
-      } catch (err) {
-        await log({
-          type: "group.auto_register_failed",
-          chatId: chat.id,
-          error: errorMessage(err),
-        });
-      }
-    }
-
-    // bot 被踢 / 退出 → 標記停用（不刪資料，保留歷史與設定）
-    if (wasIn && isOut) {
+    // 加入 or 升為 admin 才走「自動註冊 + 詢問類型」流程
+    if (wasOut && (isMember || isAdmin)) {
+      await upsertGroup(chat.id, chatTitle(chat));
+      await welcome(ctx, chat.id, isAdmin);
+    } else if (becameAdmin) {
+      // 從非 admin 升為 admin → 補發詢問
+      await upsertGroup(chat.id, chatTitle(chat));
+      await welcome(ctx, chat.id, true);
+    } else if (wasIn && isOut) {
       try {
         await db
           .update(groups)
@@ -93,4 +84,236 @@ export function registerAutoRegisterHandler(bot: Bot) {
       }
     }
   });
+
+  // 按鈕：選擇主群 / 子群
+  bot.callbackQuery(
+    new RegExp(`^${CB_PREFIX}(main|sub):(-?\\d+)$`),
+    async (ctx) => {
+      const m = ctx.callbackQuery.data!.match(
+        new RegExp(`^${CB_PREFIX}(main|sub):(-?\\d+)$`),
+      );
+      if (!m) {
+        await ctx.answerCallbackQuery({ text: "資料格式錯誤" });
+        return;
+      }
+      const kind = m[1] as "main" | "sub";
+      const chatId = Number(m[2]);
+
+      // 只允許點按鈕的人本身是該群 admin
+      try {
+        const member = await ctx.api.getChatMember(chatId, ctx.from.id);
+        if (
+          member.status !== "creator" &&
+          member.status !== "administrator"
+        ) {
+          await ctx.answerCallbackQuery({
+            text: "只有群組管理員可以設定",
+            show_alert: true,
+          });
+          return;
+        }
+      } catch (err) {
+        await ctx.answerCallbackQuery({
+          text: `驗權失敗：${errorMessage(err)}`,
+          show_alert: true,
+        });
+        return;
+      }
+
+      if (kind === "main") {
+        try {
+          await ctx.api.setChatPermissions(chatId, FULL_MUTE);
+        } catch (err) {
+          await ctx.answerCallbackQuery({
+            text: `禁言失敗（bot 需要 Restrict Members 權限）：${errorMessage(err)}`,
+            show_alert: true,
+          });
+          return;
+        }
+
+        const [sub] = await db
+          .select()
+          .from(groups)
+          .where(
+            and(
+              eq(groups.type, "sub"),
+              eq(groups.isActive, true),
+              ne(groups.chatId, chatId),
+            ),
+          )
+          .orderBy(desc(groups.id))
+          .limit(1);
+
+        await db
+          .update(groups)
+          .set({
+            type: "main",
+            syncTargetChatId: sub ? Number(sub.chatId) : null,
+          })
+          .where(eq(groups.chatId, chatId));
+        clearGroupCache(chatId);
+        if (sub) clearGroupCache(Number(sub.chatId));
+
+        const paired = sub
+          ? `\n🔗 已自動配對子群：<b>${escapeHtml(sub.title)}</b>`
+          : "\n⚠️ 尚無子群，建立子群後會自動配對。";
+
+        await editIfMsg(
+          ctx,
+          chatId,
+          `🔇 已設為「主群」並禁言全群${paired}\n\n` +
+            `現在只有 admin 能在此發言。admin 發的訊息會自動同步到子群。`,
+        );
+        await ctx.answerCallbackQuery({ text: "✅ 已設為主群" });
+        await log({
+          type: "group.set_main",
+          chatId,
+          payload: { pairedWithSub: sub ? Number(sub.chatId) : null },
+        });
+      } else {
+        // sub
+        try {
+          await ctx.api.setChatPermissions(chatId, FULL_OPEN);
+        } catch {
+          // 不阻擋，子群預設開放但即便 API 失敗也接受
+        }
+
+        await db
+          .update(groups)
+          .set({ type: "sub", syncTargetChatId: null })
+          .where(eq(groups.chatId, chatId));
+
+        const [main] = await db
+          .select()
+          .from(groups)
+          .where(
+            and(
+              eq(groups.type, "main"),
+              eq(groups.isActive, true),
+              ne(groups.chatId, chatId),
+              isNull(groups.syncTargetChatId),
+            ),
+          )
+          .orderBy(desc(groups.id))
+          .limit(1);
+
+        if (main) {
+          await db
+            .update(groups)
+            .set({ syncTargetChatId: chatId })
+            .where(eq(groups.chatId, Number(main.chatId)));
+          clearGroupCache(Number(main.chatId));
+        }
+        clearGroupCache(chatId);
+
+        const paired = main
+          ? `\n🔗 已自動配對主群：<b>${escapeHtml(main.title)}</b>`
+          : "\n⚠️ 尚無主群，建立主群後會自動配對。";
+
+        await editIfMsg(
+          ctx,
+          chatId,
+          `💬 已設為「子群」${paired}\n\n` +
+            `此群可自由聊天。主群 admin 發的訊息會自動同步到這裡。`,
+        );
+        await ctx.answerCallbackQuery({ text: "✅ 已設為子群" });
+        await log({
+          type: "group.set_sub",
+          chatId,
+          payload: { pairedWithMain: main ? Number(main.chatId) : null },
+        });
+      }
+    },
+  );
+}
+
+async function upsertGroup(chatId: number, title: string): Promise<void> {
+  try {
+    await db
+      .insert(groups)
+      .values({ chatId, title, type: "sub", isActive: true })
+      .onConflictDoUpdate({
+        target: groups.chatId,
+        set: { title, isActive: true },
+      });
+    clearGroupCache(chatId);
+  } catch (err) {
+    await log({
+      type: "group.upsert_failed",
+      chatId,
+      error: errorMessage(err),
+    });
+  }
+}
+
+async function welcome(
+  ctx: Context,
+  chatId: number,
+  isAdmin: boolean,
+): Promise<void> {
+  try {
+    if (!isAdmin) {
+      await ctx.api.sendMessage(
+        chatId,
+        `✅ 已偵測到本群（chat_id: <code>${chatId}</code>）\n\n` +
+          `⚠️ 請先把我升為「管理員」(admin)，並開啟這些權限：\n` +
+          `• Delete Messages\n` +
+          `• Restrict Members\n` +
+          `• Ban Users\n\n` +
+          `升級後我會自動詢問你這群是主群還是子群。`,
+        { parse_mode: "HTML" },
+      );
+    } else {
+      const kb = new InlineKeyboard()
+        .text("🔇 主群（廣播禁言）", `${CB_PREFIX}main:${chatId}`)
+        .row()
+        .text("💬 子群（自由聊天）", `${CB_PREFIX}sub:${chatId}`);
+      await ctx.api.sendMessage(
+        chatId,
+        `✅ Bot 已就緒。請選擇此群類型：\n\n` +
+          `• <b>主群</b>：只有 admin 能發言；admin 訊息自動同步到子群\n` +
+          `• <b>子群</b>：自由聊天；接收主群同步來的廣告\n\n` +
+          `chat_id: <code>${chatId}</code>`,
+        { reply_markup: kb, parse_mode: "HTML" },
+      );
+    }
+    await log({
+      type: "group.welcome_sent",
+      chatId,
+      payload: { isAdmin },
+    });
+  } catch (err) {
+    await log({
+      type: "group.welcome_failed",
+      chatId,
+      error: errorMessage(err),
+    });
+  }
+}
+
+async function editIfMsg(
+  ctx: Context,
+  chatId: number,
+  text: string,
+): Promise<void> {
+  const msg = ctx.callbackQuery?.message;
+  if (!msg) return;
+  try {
+    await ctx.api.editMessageText(chatId, msg.message_id, text, {
+      parse_mode: "HTML",
+    });
+  } catch {
+    // 訊息可能太舊或被刪
+  }
+}
+
+function chatTitle(chat: { id: number; type: string } & { title?: string }): string {
+  return "title" in chat && chat.title ? chat.title : `chat_${chat.id}`;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
