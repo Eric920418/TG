@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/sweep",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/verification-expire",
+      "schedule": "* * * * *"
+    }
+  ],
+  "functions": {
+    "src/app/api/telegram/webhook/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/cron/send-scheduled/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/cron/sweep/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}

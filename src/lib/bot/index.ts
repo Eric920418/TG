@@ -1,0 +1,50 @@
+import { Bot } from "grammy";
+import { apiThrottler } from "@grammyjs/transformer-throttler";
+import { env } from "@/lib/env";
+import { registerVerifyHandlers } from "./handlers/verify";
+import { registerSimplifiedHandler } from "./handlers/simplified";
+import { registerKeywordHandler } from "./handlers/keyword";
+import { registerRaidHandler } from "./handlers/raid";
+import { registerBroadcastHandler } from "./handlers/broadcast";
+import { registerLeaveMonitor } from "./handlers/leave-monitor";
+import { log, errorMessage } from "@/lib/log";
+
+let cached: Bot | null = null;
+let initialized = false;
+
+export async function getBot(): Promise<Bot> {
+  if (cached && initialized) return cached;
+  if (!cached) {
+    cached = new Bot(env().TELEGRAM_BOT_TOKEN);
+
+    // Rate limit transformer：自動處理 Telegram 限制 (30 msg/s, 20/min/group)
+    cached.api.config.use(apiThrottler());
+
+    // 全域錯誤：log 但不要 throw，否則 webhook 回 5xx 會被 Telegram 重試
+    cached.catch(async (err) => {
+      await log({
+        type: "bot.error",
+        chatId: err.ctx?.chat?.id,
+        userId: err.ctx?.from?.id,
+        error: errorMessage(err.error),
+        payload: {
+          update_id: err.ctx?.update?.update_id,
+        },
+      });
+      console.error("[bot.catch]", err);
+    });
+
+    // Handler 順序很重要：認證 → raid → 簡繁 → 關鍵字 → 同步
+    registerVerifyHandlers(cached);
+    registerRaidHandler(cached);
+    registerLeaveMonitor(cached);
+    registerSimplifiedHandler(cached);
+    registerKeywordHandler(cached);
+    registerBroadcastHandler(cached);
+  }
+  if (!initialized) {
+    await cached.init();
+    initialized = true;
+  }
+  return cached;
+}
