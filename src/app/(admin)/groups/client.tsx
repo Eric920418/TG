@@ -229,16 +229,22 @@ export function GroupsClient({ initial }: { initial: Group[] }) {
                 <Label htmlFor="g-active">啟用（停用後 bot 將忽略此群）</Label>
               </div>
             </div>
-            <div className="border-t border-zinc-200 pt-4 dark:border-zinc-800">
-              <ButtonEditor
-                label="預設按鈕（主群→子群同步時自動附加）"
-                hint="僅當此群為 main 時生效。主群 admin 發訊息同步到子群後，子群版本會在尾端附加這些按鈕（例如「聊天室」「客服」）。"
-                value={draft.defaultButtons}
-                onChange={(defaultButtons) =>
-                  setDraft({ ...draft, defaultButtons })
-                }
-              />
-            </div>
+            {draft.type === "main" ? (
+              <div className="border-t border-zinc-200 pt-4 dark:border-zinc-800">
+                <ButtonEditor
+                  label="預設按鈕（主群→子群同步時自動附加）"
+                  hint="主群 admin 發訊息同步到子群後，子群版本會在尾端附加這些按鈕（例如「聊天室」「客服」）。"
+                  value={draft.defaultButtons}
+                  onChange={(defaultButtons) =>
+                    setDraft({ ...draft, defaultButtons })
+                  }
+                />
+              </div>
+            ) : (
+              <div className="border-t border-zinc-200 pt-4 text-xs text-zinc-500 dark:border-zinc-800">
+                💡 「預設按鈕」（同步附加給子群）只能在主群（main）設定。把上面「類型」改為 main 後會出現編輯欄。
+              </div>
+            )}
             <div className="flex gap-2">
               <Button onClick={save} disabled={pending}>
                 {pending ? "儲存中…" : "儲存"}
