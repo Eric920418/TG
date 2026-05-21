@@ -1,5 +1,5 @@
 import { InlineKeyboard, type Bot, type Context } from "grammy";
-import { and, desc, eq, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { groups } from "@/lib/db/schema";
 import { clearGroupCache } from "@/lib/bot/group-cache";
@@ -36,6 +36,23 @@ const FULL_OPEN = {
 } as const;
 
 export function registerAutoRegisterHandler(bot: Bot) {
+  // Telegram 把 basic group 升級為 supergroup 時，會送兩條 service message：
+  //   舊群：message.migrate_to_chat_id = <新>
+  //   新群：message.migrate_from_chat_id = <舊>
+  // 任一條被我們收到都把 DB row 的 chat_id 從舊改新
+  bot.on(":migrate_to_chat_id", async (ctx) => {
+    const newChatId = ctx.message?.migrate_to_chat_id;
+    const oldChatId = ctx.chat?.id;
+    if (!newChatId || !oldChatId) return;
+    await migrateChatId(oldChatId, newChatId);
+  });
+  bot.on(":migrate_from_chat_id", async (ctx) => {
+    const oldChatId = ctx.message?.migrate_from_chat_id;
+    const newChatId = ctx.chat?.id;
+    if (!oldChatId || !newChatId) return;
+    await migrateChatId(oldChatId, newChatId);
+  });
+
   // bot 加入 / 升降級 / 被踢
   bot.on("my_chat_member", async (ctx) => {
     const upd = ctx.myChatMember;
@@ -183,6 +200,7 @@ export function registerAutoRegisterHandler(bot: Bot) {
           .set({ type: "sub", syncTargetChatId: null })
           .where(eq(groups.chatId, chatId));
 
+        // 找最近的 active main，直接 overwrite 它的 sync target
         const [main] = await db
           .select()
           .from(groups)
@@ -191,7 +209,6 @@ export function registerAutoRegisterHandler(bot: Bot) {
               eq(groups.type, "main"),
               eq(groups.isActive, true),
               ne(groups.chatId, chatId),
-              isNull(groups.syncTargetChatId),
             ),
           )
           .orderBy(desc(groups.id))
@@ -225,6 +242,77 @@ export function registerAutoRegisterHandler(bot: Bot) {
       }
     },
   );
+}
+
+async function migrateChatId(oldId: number, newId: number): Promise<void> {
+  try {
+    const [oldRow] = await db
+      .select()
+      .from(groups)
+      .where(eq(groups.chatId, oldId))
+      .limit(1);
+    if (!oldRow) {
+      // 舊 row 不存在就不用做；新 row 若不存在 my_chat_member 也會處理
+      return;
+    }
+    const [newRow] = await db
+      .select()
+      .from(groups)
+      .where(eq(groups.chatId, newId))
+      .limit(1);
+
+    if (newRow) {
+      // 兩個 row 都存在：把舊 row 的設定 merge 進新 row（保留使用者選的 type）
+      const preferOldType = oldRow.type === "main" && newRow.type === "sub";
+      await db
+        .update(groups)
+        .set({
+          type: preferOldType ? "main" : newRow.type,
+          isActive: true,
+          syncTargetChatId: oldRow.syncTargetChatId ?? newRow.syncTargetChatId,
+          simplifiedPolicy: oldRow.simplifiedPolicy,
+          raidThreshold: oldRow.raidThreshold,
+          raidWindowSec: oldRow.raidWindowSec,
+          warningLimit: oldRow.warningLimit,
+          muteDurationSec: oldRow.muteDurationSec,
+          verifyTimeoutSec: oldRow.verifyTimeoutSec,
+        })
+        .where(eq(groups.id, newRow.id));
+      // 把指向舊 chat_id 的 sync_target 都改指新 chat_id
+      await db
+        .update(groups)
+        .set({ syncTargetChatId: newId })
+        .where(eq(groups.syncTargetChatId, oldId));
+      // 移除舊 row
+      await db.delete(groups).where(eq(groups.id, oldRow.id));
+    } else {
+      // 只有舊 row：直接把 chat_id 改成新的
+      await db
+        .update(groups)
+        .set({ chatId: newId })
+        .where(eq(groups.id, oldRow.id));
+      // 其他 row 的 sync_target 指向舊的也一併更新
+      await db
+        .update(groups)
+        .set({ syncTargetChatId: newId })
+        .where(eq(groups.syncTargetChatId, oldId));
+    }
+
+    clearGroupCache(oldId);
+    clearGroupCache(newId);
+    await log({
+      type: "group.migrated",
+      chatId: newId,
+      payload: { from: oldId, to: newId },
+    });
+  } catch (err) {
+    await log({
+      type: "group.migrate_failed",
+      chatId: newId,
+      error: errorMessage(err),
+      payload: { from: oldId },
+    });
+  }
 }
 
 async function upsertGroup(chatId: number, title: string): Promise<void> {
