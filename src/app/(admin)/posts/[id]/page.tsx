@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { groups, scheduledPosts } from "@/lib/db/schema";
+import { groups, scheduledPosts, stagingMessages } from "@/lib/db/schema";
 import { PostForm } from "../post-form";
 
 export const dynamic = "force-dynamic";
@@ -22,11 +22,18 @@ export default async function EditPostPage({
     .limit(1);
   if (!row) notFound();
 
-  const allGroups = await db
-    .select()
-    .from(groups)
-    .where(eq(groups.isActive, true))
-    .orderBy(desc(groups.id));
+  const [allGroups, stagings] = await Promise.all([
+    db
+      .select()
+      .from(groups)
+      .where(eq(groups.isActive, true))
+      .orderBy(desc(groups.id)),
+    db
+      .select()
+      .from(stagingMessages)
+      .orderBy(desc(stagingMessages.id))
+      .limit(50),
+  ]);
 
   const activeChatIds = new Set(allGroups.map((g) => Number(g.chatId)));
   const inactiveChatIds = row.targetChatIds.filter(
@@ -55,12 +62,19 @@ export default async function EditPostPage({
           title: g.title,
           type: g.type,
         }))}
+        stagings={stagings.map((s) => ({
+          id: s.id,
+          label: s.label,
+          hasMedia: s.hasMedia,
+          createdAt: s.createdAt,
+        }))}
         initial={{
           id: row.id,
           title: row.title,
           content: row.content,
           targetChatIds: row.targetChatIds,
           sendAt: new Date(row.sendAt),
+          stagingMessageId: row.stagingMessageId,
         }}
       />
     </div>

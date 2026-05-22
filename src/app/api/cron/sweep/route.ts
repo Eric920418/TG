@@ -44,7 +44,11 @@ export async function GET(req: Request): Promise<Response> {
     }
 
     try {
-      const results = await sendPostToChats(row.content, row.targetChatIds);
+      const results = await sendPostToChats(
+        row.content,
+        row.targetChatIds,
+        row.stagingMessageId,
+      );
       const anySuccess = results.some((r) => r.messageId != null);
       const errors = results.filter((r) => r.error).map((r) => `${r.chatId}: ${r.error}`);
       await db

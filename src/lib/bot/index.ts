@@ -9,6 +9,7 @@ import { registerBroadcastHandler } from "./handlers/broadcast";
 import { registerLeaveMonitor } from "./handlers/leave-monitor";
 import { registerLoginHandler } from "./handlers/login";
 import { registerAutoRegisterHandler } from "./handlers/auto-register";
+import { registerStagingHandler } from "./handlers/staging";
 import { log, errorMessage } from "@/lib/log";
 
 let cached: Bot | null = null;
@@ -36,9 +37,10 @@ export async function getBot(): Promise<Bot> {
       console.error("[bot.catch]", err);
     });
 
-    // Handler 順序很重要：login DM → auto-register → 認證 → raid → 簡繁 → 關鍵字 → 同步
+    // Handler 順序很重要：login DM → auto-register → staging DM → 認證 → raid → 簡繁 → 關鍵字 → 同步
     registerLoginHandler(cached);
     registerAutoRegisterHandler(cached);
+    registerStagingHandler(cached);
     registerVerifyHandlers(cached);
     registerRaidHandler(cached);
     registerLeaveMonitor(cached);

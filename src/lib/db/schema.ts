@@ -94,6 +94,23 @@ export const groups = pgTable(
   (t) => [uniqueIndex("groups_chat_id_idx").on(t.chatId)],
 );
 
+/**
+ * Telegram staging messages：客戶把含 custom_emoji / 富格式的訊息私訊 / 轉發給 bot，
+ * bot 把那條訊息的座標（chat_id + message_id）記下來，之後排程發送時用
+ * copyMessage 從這個 staging 整條搬到目標群，entities 完整保留。
+ */
+export const stagingMessages = pgTable("staging_messages", {
+  id: serial("id").primaryKey(),
+  chatId: bigint("chat_id", { mode: "number" }).notNull(),
+  messageId: bigint("message_id", { mode: "number" }).notNull(),
+  label: text("label").notNull(),
+  hasMedia: boolean("has_media").notNull().default(false),
+  capturedByAdminId: integer("captured_by_admin_id"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const buttonTemplates = pgTable("button_templates", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -167,6 +184,8 @@ export const scheduledPosts = pgTable(
     error: text("error"),
     // 發到每個 chat 的結果 [{chatId, messageId, error}]
     results: jsonb("results").$type<PostResult[]>(),
+    // 若指定 staging：發送改用 copyMessage 從 staging chat 把那條訊息整條搬過去（保留 custom_emoji 等 entities）
+    stagingMessageId: integer("staging_message_id"),
     createdBy: bigint("created_by", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -268,3 +287,4 @@ export type Broadcast = typeof broadcasts.$inferSelect;
 export type KeywordRow = typeof keywordBlacklist.$inferSelect;
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type ButtonTemplate = typeof buttonTemplates.$inferSelect;
+export type StagingMessage = typeof stagingMessages.$inferSelect;

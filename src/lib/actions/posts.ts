@@ -43,6 +43,10 @@ const postSchema = z.object({
   content: contentSchema,
   targetChatIds: z.array(z.coerce.number().int()).min(1, "至少選一個目標群"),
   sendAt: z.coerce.date(),
+  stagingMessageId: z
+    .union([z.coerce.number().int(), z.null()])
+    .optional()
+    .transform((v) => v ?? null),
 });
 
 async function scheduleQstash(postId: number, sendAt: Date): Promise<string> {
@@ -74,6 +78,7 @@ export async function createPost(input: unknown): Promise<ActionResult> {
         content: data.content,
         targetChatIds: data.targetChatIds,
         sendAt: data.sendAt,
+        stagingMessageId: data.stagingMessageId,
         status: "pending",
       })
       .returning();
@@ -131,6 +136,7 @@ export async function updatePost(input: unknown): Promise<ActionResult> {
         content: data.content,
         targetChatIds: data.targetChatIds,
         sendAt: data.sendAt,
+        stagingMessageId: data.stagingMessageId,
         error: null,
         qstashMessageId: null,
         updatedAt: new Date(),

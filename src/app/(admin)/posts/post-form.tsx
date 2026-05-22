@@ -18,12 +18,20 @@ export type PostFormInitial = {
   content: ScheduledPostContent;
   targetChatIds: number[];
   sendAt: Date;
+  stagingMessageId?: number | null;
 };
 
 export type GroupOption = {
   chatId: number;
   title: string;
   type: "main" | "sub";
+};
+
+export type StagingOption = {
+  id: number;
+  label: string;
+  hasMedia: boolean;
+  createdAt: Date | string;
 };
 
 function toLocalInputValue(d: Date): string {
@@ -44,9 +52,11 @@ const TELEGRAM_ALBUM_MAX = 10;
 
 export function PostForm({
   groups,
+  stagings,
   initial,
 }: {
   groups: GroupOption[];
+  stagings: StagingOption[];
   initial?: PostFormInitial;
 }) {
   const router = useRouter();
@@ -77,8 +87,12 @@ export function PostForm({
       ? toLocalInputValue(new Date(initial.sendAt))
       : defaultSendAt(),
   );
+  const [stagingMessageId, setStagingMessageId] = useState<number | null>(
+    initial?.stagingMessageId ?? null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const useStaging = stagingMessageId != null;
 
   function toggleTarget(chatId: number) {
     setTargets((t) =>
@@ -145,6 +159,7 @@ export function PostForm({
       content,
       targetChatIds: targets,
       sendAt: new Date(sendAt),
+      stagingMessageId,
     };
     startTransition(async () => {
       const res = initial?.id
@@ -169,6 +184,65 @@ export function PostForm({
           <Input value={title} onChange={(e) => setTitle(e.target.value)} />
         </div>
 
+        <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/40 p-3 dark:border-amber-900/30 dark:bg-amber-950/10">
+          <Label>貼文內容來源</Label>
+          <div className="flex gap-3 flex-wrap">
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="source"
+                checked={!useStaging}
+                onChange={() => setStagingMessageId(null)}
+              />
+              <span className="text-sm">自行填寫（下方文字 / 媒體 / 按鈕）</span>
+            </label>
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="source"
+                checked={useStaging}
+                onChange={() => {
+                  if (stagings.length > 0) setStagingMessageId(stagings[0].id);
+                }}
+                disabled={stagings.length === 0}
+              />
+              <span className="text-sm">
+                從 bot 收到的訊息匯入（保留動態貼紙 / 富格式）
+              </span>
+            </label>
+          </div>
+          {useStaging && (
+            <div className="mt-2 space-y-1.5">
+              <select
+                value={stagingMessageId ?? ""}
+                onChange={(e) =>
+                  setStagingMessageId(
+                    e.target.value ? Number(e.target.value) : null,
+                  )
+                }
+                className="h-9 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+              >
+                {stagings.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    #{s.id} · {s.hasMedia ? "📎 " : ""}
+                    {s.label} · {new Date(s.createdAt).toLocaleString("zh-TW")}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-zinc-500">
+                提示：把含動態貼紙 / 富格式的訊息私訊或轉發給 @Kkk696kkk_admin_bot，會自動出現在這個下拉。
+              </p>
+            </div>
+          )}
+          {stagings.length === 0 && (
+            <p className="text-xs text-zinc-500">
+              （尚無 bot DM 素材。把要排程的訊息私訊或轉發給 bot 即可自動產生）
+            </p>
+          )}
+        </div>
+
+        {!useStaging && (
+        <>
         <div className="space-y-1.5">
           <Label>文字內容</Label>
           <Textarea
@@ -290,9 +364,11 @@ export function PostForm({
             支援格式：圖片 ≤ 10 MB；影片 / GIF / 檔案 ≤ 50 MB（Telegram bot 上傳上限）
           </p>
         </div>
+        </>
+        )}
 
         <div className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-          <Label>按鈕</Label>
+          <Label>按鈕{useStaging ? "（套用會覆蓋 staging 原訊息的按鈕；留空則保留原狀）" : ""}</Label>
           <ButtonEditor
             value={buttons}
             onChange={setButtons}
