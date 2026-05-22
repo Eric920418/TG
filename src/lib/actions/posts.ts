@@ -27,10 +27,12 @@ const contentSchema = z.object({
     .array(
       z.object({
         type: z.enum(["photo", "video", "document", "animation"]),
-        url: z.string().url(),
+        // 可以是 http(s) URL 或 Telegram file_id（後台上傳後拿到的）
+        url: z.string().min(1).max(500),
         caption: z.string().optional(),
       }),
     )
+    .max(10)
     .optional(),
   buttons: z.array(z.array(buttonSchema)).optional(),
 });
