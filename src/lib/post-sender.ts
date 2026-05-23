@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { Api } from "telegram";
+import { CustomFile } from "telegram/client/uploads";
 import type { InlineKeyboardButton } from "grammy/types";
 import { getBot } from "@/lib/bot";
 import { db } from "@/lib/db";
@@ -7,6 +8,7 @@ import { stagingMessages } from "@/lib/db/schema";
 import type { ScheduledPostContent, PostResult } from "@/lib/db/schema";
 import { renderButtons } from "@/lib/buttons";
 import { redis } from "@/lib/redis";
+import { env } from "@/lib/env";
 import { withClient, sleep } from "@/lib/mtproto/client";
 import { errorMessage } from "@/lib/log";
 
@@ -48,6 +50,37 @@ function toGramjsMarkup(
 function todayYMD(): string {
   const d = new Date();
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+/**
+ * 把 bot file_id（或 http URL）轉成 GramJS 可直接送的 file。
+ *  - http URL：直接回字串，GramJS 內部會 fetch
+ *  - bot file_id：呼叫 bot.api.getFile → 從 Telegram CDN 下載 bytes → 包成 CustomFile
+ *    （因為 bot file_id 跟 user MTProto namespace 不通，必須重新上傳）
+ */
+async function mediaToFileLike(
+  url: string,
+  kind: "photo" | "video" | "animation" | "document",
+): Promise<string | CustomFile> {
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url;
+  }
+  const bot = await getBot();
+  const file = await bot.api.getFile(url);
+  if (!file.file_path) {
+    throw new Error(`getFile ${url} 沒拿到 file_path`);
+  }
+  const dlUrl = `https://api.telegram.org/file/bot${env().TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+  const res = await fetch(dlUrl);
+  if (!res.ok) {
+    throw new Error(`下載 file 失敗：HTTP ${res.status}`);
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  const ext =
+    file.file_path.split(".").pop() ||
+    (kind === "photo" ? "jpg" : kind === "video" ? "mp4" : kind === "animation" ? "gif" : "bin");
+  const name = `${kind}-${Date.now()}.${ext}`;
+  return new CustomFile(name, buf.length, "", buf);
 }
 
 /**
@@ -200,10 +233,15 @@ async function sendViaUser(
 
   try {
     await withClient(adminId, async (client) => {
+      type FileParam =
+        | Api.TypeMessageMedia
+        | string
+        | CustomFile
+        | Array<string | CustomFile>;
       let baseMessage: {
         message: string;
         entities?: Api.TypeMessageEntity[];
-        file?: Api.TypeMessageMedia;
+        file?: FileParam;
       } = { message: content.text ?? "" };
 
       if (stagingMessageId != null) {
@@ -242,6 +280,24 @@ async function sendViaUser(
           entities: m.entities,
           file: m.media ?? undefined,
         };
+      } else if (content.media && content.media.length > 0) {
+        // 非 staging 模式：把 bot 上傳的 file_id 轉成 user MTProto 可送的 file
+        const files: Array<string | CustomFile> = [];
+        for (const m of content.media) {
+          try {
+            files.push(await mediaToFileLike(m.url, m.type));
+          } catch (err) {
+            // 個別檔案失敗就跳過、記在 results 裡讓使用者知道
+            for (const chatId of chatIds) {
+              results.push({
+                chatId,
+                error: `轉檔失敗 (${m.type})：${errorMessage(err)}`,
+              });
+            }
+            return;
+          }
+        }
+        baseMessage.file = files.length === 1 ? files[0] : files;
       }
 
       for (const chatId of chatIds) {
