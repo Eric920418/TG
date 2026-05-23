@@ -11,6 +11,9 @@ const schema = z.object({
   QSTASH_TOKEN: z.string().min(1),
   QSTASH_CURRENT_SIGNING_KEY: z.string().min(1),
   QSTASH_NEXT_SIGNING_KEY: z.string().min(1),
+  // MTProto 進階功能（optional：缺失時整套 feature 自動 disable）
+  MTPROTO_API_ID: z.coerce.number().int().optional(),
+  MTPROTO_API_HASH: z.string().min(1).optional(),
   SESSION_PASSWORD: z.string().min(32),
   CRON_SECRET: z.string().min(16),
   NEXT_PUBLIC_BASE_URL: z.string().url(),

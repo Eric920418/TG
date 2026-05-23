@@ -37,6 +37,8 @@ async function executePost(
       content: scheduledPosts.content,
       targetChatIds: scheduledPosts.targetChatIds,
       stagingMessageId: scheduledPosts.stagingMessageId,
+      sendAs: scheduledPosts.sendAs,
+      sendAsAdminId: scheduledPosts.sendAsAdminId,
     });
 
   if (claimed.length === 0) {
@@ -49,6 +51,8 @@ async function executePost(
       row.content,
       row.targetChatIds,
       row.stagingMessageId,
+      row.sendAs,
+      row.sendAsAdminId,
     );
     const anySuccess = results.some((r) => r.messageId != null);
     const errors = results.filter((r) => r.error).map((r) => `${r.chatId}: ${r.error}`);

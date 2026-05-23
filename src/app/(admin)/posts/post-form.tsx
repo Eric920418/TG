@@ -20,6 +20,7 @@ export type PostFormInitial = {
   targetChatIds: number[];
   sendAt: Date;
   stagingMessageId?: number | null;
+  sendAs?: "bot" | "user";
 };
 
 export type GroupOption = {
@@ -54,10 +55,12 @@ const TELEGRAM_ALBUM_MAX = 10;
 export function PostForm({
   groups,
   stagings,
+  mtprotoAvailable,
   initial,
 }: {
   groups: GroupOption[];
   stagings: StagingOption[];
+  mtprotoAvailable: boolean;
   initial?: PostFormInitial;
 }) {
   const router = useRouter();
@@ -91,6 +94,7 @@ export function PostForm({
   const [stagingMessageId, setStagingMessageId] = useState<number | null>(
     initial?.stagingMessageId ?? null,
   );
+  const [sendAs, setSendAs] = useState<"bot" | "user">(initial?.sendAs ?? "bot");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const useStaging = stagingMessageId != null;
@@ -176,6 +180,7 @@ export function PostForm({
       targetChatIds: targets,
       sendAt: new Date(sendAt),
       stagingMessageId,
+      sendAs,
     };
     startTransition(async () => {
       const res = initial?.id
@@ -266,6 +271,45 @@ export function PostForm({
           {stagings.length === 0 && (
             <p className="text-xs text-zinc-500">
               （尚無 bot DM 素材。把要排程的訊息私訊或轉發給 bot 即可自動產生）
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <Label>送出身分</Label>
+          <div className="flex flex-wrap gap-3">
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="sendAs"
+                checked={sendAs === "bot"}
+                onChange={() => setSendAs("bot")}
+              />
+              <span className="text-sm">Bot（預設、不會發 channel custom_emoji）</span>
+            </label>
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="sendAs"
+                checked={sendAs === "user"}
+                onChange={() => setSendAs("user")}
+                disabled={!mtprotoAvailable}
+              />
+              <span
+                className={`text-sm ${!mtprotoAvailable ? "text-zinc-400" : ""}`}
+              >
+                我的帳號 (Premium)
+                {!mtprotoAvailable && (
+                  <span className="ml-2 text-xs">
+                    — 請先到 <a href="/mtproto" className="underline">MTProto</a> 綁定
+                  </span>
+                )}
+              </span>
+            </label>
+          </div>
+          {sendAs === "user" && (
+            <p className="text-xs text-emerald-700 dark:text-emerald-400">
+              ✅ 用本人帳號發送：custom_emoji 在 channel 也完整保留。每筆間隔 3 秒、每日上限 200 條。
             </p>
           )}
         </div>

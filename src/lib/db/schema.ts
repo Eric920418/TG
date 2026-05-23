@@ -46,6 +46,12 @@ export const admins = pgTable(
     photoUrl: text("photo_url"),
     role: adminRoleEnum("role").notNull().default("admin"),
     isActive: boolean("is_active").notNull().default(true),
+    // MTProto user account (本人 Premium 帳號) 自動發送 — owner-only 進階功能
+    mtprotoSessionEnc: text("mtproto_session_enc"),
+    mtprotoSessionIv: text("mtproto_session_iv"),
+    mtprotoPhone: text("mtproto_phone"),
+    mtprotoUserId: bigint("mtproto_user_id", { mode: "number" }),
+    mtprotoConnectedAt: timestamp("mtproto_connected_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -186,6 +192,10 @@ export const scheduledPosts = pgTable(
     results: jsonb("results").$type<PostResult[]>(),
     // 若指定 staging：發送改用 copyMessage 從 staging chat 把那條訊息整條搬過去（保留 custom_emoji 等 entities）
     stagingMessageId: integer("staging_message_id"),
+    // 發送身分：'bot' (預設，用 Bot API) | 'user' (用 admin 的 MTProto session 發、custom_emoji 在 channel 也保留)
+    sendAs: text("send_as", { enum: ["bot", "user"] }).notNull().default("bot"),
+    // 若 sendAs='user'：用哪個 admin 的 session（必須有效綁定 MTProto）
+    sendAsAdminId: integer("send_as_admin_id"),
     createdBy: bigint("created_by", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

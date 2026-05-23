@@ -12,6 +12,7 @@ const navItems: NavItem[] = [
   { href: "/questions", label: "認證題庫" },
   { href: "/groups", label: "群組設定" },
   { href: "/keywords", label: "關鍵字守門" },
+  { href: "/mtproto", label: "MTProto" },
   { href: "/upgrade", label: "⭐ 升級", highlight: true },
 ];
 

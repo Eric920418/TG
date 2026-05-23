@@ -1,7 +1,9 @@
 import { desc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { groups, scheduledPosts, stagingMessages } from "@/lib/db/schema";
+import { admins, groups, scheduledPosts, stagingMessages } from "@/lib/db/schema";
+import { getSession } from "@/lib/auth/session";
+import { env } from "@/lib/env";
 import { PostForm } from "../post-form";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +24,8 @@ export default async function EditPostPage({
     .limit(1);
   if (!row) notFound();
 
-  const [allGroups, stagings] = await Promise.all([
+  const session = await getSession();
+  const [allGroups, stagings, adminRow] = await Promise.all([
     db
       .select()
       .from(groups)
@@ -33,7 +36,19 @@ export default async function EditPostPage({
       .from(stagingMessages)
       .orderBy(desc(stagingMessages.id))
       .limit(50),
+    session.adminId
+      ? db
+          .select({ mtprotoSessionEnc: admins.mtprotoSessionEnc })
+          .from(admins)
+          .where(eq(admins.id, session.adminId))
+          .limit(1)
+      : Promise.resolve([]),
   ]);
+  const e = env();
+  const mtprotoAvailable =
+    !!(e.MTPROTO_API_ID && e.MTPROTO_API_HASH) &&
+    Array.isArray(adminRow) &&
+    !!adminRow[0]?.mtprotoSessionEnc;
 
   const activeChatIds = new Set(allGroups.map((g) => Number(g.chatId)));
   const inactiveChatIds = row.targetChatIds.filter(
@@ -68,6 +83,7 @@ export default async function EditPostPage({
           hasMedia: s.hasMedia,
           createdAt: s.createdAt,
         }))}
+        mtprotoAvailable={mtprotoAvailable}
         initial={{
           id: row.id,
           title: row.title,
@@ -75,6 +91,7 @@ export default async function EditPostPage({
           targetChatIds: row.targetChatIds,
           sendAt: new Date(row.sendAt),
           stagingMessageId: row.stagingMessageId,
+          sendAs: row.sendAs,
         }}
       />
     </div>

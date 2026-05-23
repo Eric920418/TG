@@ -48,6 +48,8 @@ export async function GET(req: Request): Promise<Response> {
         row.content,
         row.targetChatIds,
         row.stagingMessageId,
+        row.sendAs,
+        row.sendAsAdminId,
       );
       const anySuccess = results.some((r) => r.messageId != null);
       const errors = results.filter((r) => r.error).map((r) => `${r.chatId}: ${r.error}`);

@@ -1,10 +1,17 @@
 import { eq } from "drizzle-orm";
+import { Api } from "telegram";
+import type { InlineKeyboardButton } from "grammy/types";
 import { getBot } from "@/lib/bot";
 import { db } from "@/lib/db";
 import { stagingMessages } from "@/lib/db/schema";
 import type { ScheduledPostContent, PostResult } from "@/lib/db/schema";
 import { renderButtons } from "@/lib/buttons";
+import { redis } from "@/lib/redis";
+import { withClient, sleep } from "@/lib/mtproto/client";
 import { errorMessage } from "@/lib/log";
+
+const USER_DAILY_LIMIT = 200;
+const USER_SEND_DELAY_MS = 3000;
 
 function buildKeyboard(content: ScheduledPostContent) {
   const inline = renderButtons(content.buttons);
@@ -12,22 +19,76 @@ function buildKeyboard(content: ScheduledPostContent) {
   return { inline_keyboard: inline };
 }
 
+/** grammY 風格按鈕陣列 → GramJS Api.ReplyInlineMarkup */
+function toGramjsMarkup(
+  kb: InlineKeyboardButton[][] | undefined,
+): Api.ReplyInlineMarkup | undefined {
+  if (!kb || kb.length === 0) return undefined;
+  const rows = kb.map((row) => {
+    const buttons: Api.TypeKeyboardButton[] = [];
+    for (const btn of row) {
+      if ("url" in btn) {
+        buttons.push(
+          new Api.KeyboardButtonUrl({ text: btn.text, url: btn.url }),
+        );
+      } else if ("copy_text" in btn && btn.copy_text) {
+        buttons.push(
+          new Api.KeyboardButtonCopy({
+            text: btn.text,
+            copyText: btn.copy_text.text,
+          }),
+        );
+      }
+    }
+    return new Api.KeyboardButtonRow({ buttons });
+  });
+  return new Api.ReplyInlineMarkup({ rows });
+}
+
+function todayYMD(): string {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
 /**
  * 發送排程貼文到多個 chat。
- * 若 stagingMessageId 有值：用 copyMessage 從 staging chat 把原訊息 1:1 搬過去（保留 custom_emoji
- * 等 entities）；發送後再 editMessageReplyMarkup 套用 content.buttons（若有）。
- * 否則：用 content 內容（text + media + buttons）compose 新訊息發送。
+ * - sendAs='bot' (預設)：grammY Bot API 路徑（既有邏輯）
+ * - sendAs='user' + sendAsAdminId：MTProto 路徑，用 owner 本人帳號發送，
+ *   custom_emoji 在 channel 也保留。有每日上限、每筆 3 秒間隔防 anti-spam。
  */
 export async function sendPostToChats(
   content: ScheduledPostContent,
   chatIds: number[],
   stagingMessageId?: number | null,
+  sendAs: "bot" | "user" = "bot",
+  sendAsAdminId?: number | null,
+): Promise<PostResult[]> {
+  if (sendAs === "user") {
+    if (!sendAsAdminId) {
+      return chatIds.map((chatId) => ({
+        chatId,
+        error: "sendAs=user 但 sendAsAdminId 缺失",
+      }));
+    }
+    return sendViaUser(
+      sendAsAdminId,
+      chatIds,
+      content,
+      stagingMessageId ?? null,
+    );
+  }
+  return sendViaBot(content, chatIds, stagingMessageId ?? null);
+}
+
+async function sendViaBot(
+  content: ScheduledPostContent,
+  chatIds: number[],
+  stagingMessageId: number | null,
 ): Promise<PostResult[]> {
   const bot = await getBot();
   const keyboard = buildKeyboard(content);
   const results: PostResult[] = [];
 
-  // ---- staging 模式：copyMessage ----
   if (stagingMessageId != null) {
     const [staging] = await db
       .select()
@@ -36,7 +97,10 @@ export async function sendPostToChats(
       .limit(1);
     if (!staging) {
       for (const chatId of chatIds) {
-        results.push({ chatId, error: `staging message #${stagingMessageId} not found` });
+        results.push({
+          chatId,
+          error: `staging message #${stagingMessageId} not found`,
+        });
       }
       return results;
     }
@@ -47,14 +111,13 @@ export async function sendPostToChats(
           Number(staging.chatId),
           Number(staging.messageId),
         );
-        // 套用排程設定的按鈕（若有）— 覆蓋原訊息可能帶的按鈕
         if (keyboard) {
           try {
             await bot.api.editMessageReplyMarkup(chatId, sent.message_id, {
               reply_markup: keyboard,
             });
           } catch {
-            // 編輯失敗不阻塞
+            /* edit fail 不阻塞 */
           }
         }
         results.push({ chatId, messageId: sent.message_id });
@@ -65,7 +128,6 @@ export async function sendPostToChats(
     return results;
   }
 
-  // ---- 一般模式：compose 新訊息 ----
   for (const chatId of chatIds) {
     try {
       if (content.media && content.media.length > 0) {
@@ -78,13 +140,15 @@ export async function sendPostToChats(
             reply_markup: keyboard,
           } as const;
           let sent;
-          if (m.type === "photo") sent = await bot.api.sendPhoto(chatId, m.url, opts);
-          else if (m.type === "video") sent = await bot.api.sendVideo(chatId, m.url, opts);
-          else if (m.type === "animation") sent = await bot.api.sendAnimation(chatId, m.url, opts);
+          if (m.type === "photo")
+            sent = await bot.api.sendPhoto(chatId, m.url, opts);
+          else if (m.type === "video")
+            sent = await bot.api.sendVideo(chatId, m.url, opts);
+          else if (m.type === "animation")
+            sent = await bot.api.sendAnimation(chatId, m.url, opts);
           else sent = await bot.api.sendDocument(chatId, m.url, opts);
           results.push({ chatId, messageId: sent.message_id });
         } else {
-          // 多媒體 album，不支援 keyboard
           const media = content.media.map((m, i) => ({
             type: m.type === "animation" ? "video" : m.type,
             media: m.url,
@@ -110,5 +174,107 @@ export async function sendPostToChats(
       results.push({ chatId, error: errorMessage(err) });
     }
   }
+  return results;
+}
+
+async function sendViaUser(
+  adminId: number,
+  chatIds: number[],
+  content: ScheduledPostContent,
+  stagingMessageId: number | null,
+): Promise<PostResult[]> {
+  const results: PostResult[] = [];
+  const keyboard = buildKeyboard(content);
+  const replyMarkup = toGramjsMarkup(keyboard?.inline_keyboard);
+
+  // 每日上限檢查
+  const dailyKey = `mtproto:sent:${adminId}:${todayYMD()}`;
+  const sentTodayRaw = await redis().get<number | string>(dailyKey);
+  const sentToday = Number(sentTodayRaw ?? 0);
+  if (sentToday >= USER_DAILY_LIMIT) {
+    return chatIds.map((chatId) => ({
+      chatId,
+      error: `已達每日 user 帳號發送上限 ${USER_DAILY_LIMIT} 條`,
+    }));
+  }
+
+  try {
+    await withClient(adminId, async (client) => {
+      let baseMessage: {
+        message: string;
+        entities?: Api.TypeMessageEntity[];
+        file?: Api.TypeMessageMedia;
+      } = { message: content.text ?? "" };
+
+      if (stagingMessageId != null) {
+        const [staging] = await db
+          .select()
+          .from(stagingMessages)
+          .where(eq(stagingMessages.id, stagingMessageId))
+          .limit(1);
+        if (!staging) {
+          for (const chatId of chatIds) {
+            results.push({
+              chatId,
+              error: `staging message #${stagingMessageId} not found`,
+            });
+          }
+          return;
+        }
+        const stagingChatEntity = await client.getInputEntity(
+          Number(staging.chatId),
+        );
+        const msgs = await client.getMessages(stagingChatEntity, {
+          ids: [Number(staging.messageId)],
+        });
+        const m = msgs[0];
+        if (!m) {
+          for (const chatId of chatIds) {
+            results.push({
+              chatId,
+              error: `staging Telegram 訊息已被刪除`,
+            });
+          }
+          return;
+        }
+        baseMessage = {
+          message: m.message ?? "",
+          entities: m.entities,
+          file: m.media ?? undefined,
+        };
+      }
+
+      for (const chatId of chatIds) {
+        try {
+          const sent = await client.sendMessage(chatId, {
+            message: baseMessage.message,
+            formattingEntities: baseMessage.entities,
+            file: baseMessage.file,
+            buttons: replyMarkup,
+          });
+          const msgId =
+            "id" in sent && typeof sent.id !== "undefined"
+              ? Number(sent.id)
+              : undefined;
+          results.push({ chatId, messageId: msgId });
+
+          await redis().incr(dailyKey);
+          await redis().expire(dailyKey, 90000);
+        } catch (err) {
+          results.push({ chatId, error: errorMessage(err) });
+        }
+        await sleep(USER_SEND_DELAY_MS);
+      }
+    });
+  } catch (err) {
+    // withClient / 連線層失敗 → 全部目標標記
+    const msg = errorMessage(err);
+    for (const chatId of chatIds) {
+      if (!results.find((r) => r.chatId === chatId)) {
+        results.push({ chatId, error: msg });
+      }
+    }
+  }
+
   return results;
 }

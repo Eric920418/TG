@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { scheduledPosts } from "@/lib/db/schema";
+import { admins, scheduledPosts } from "@/lib/db/schema";
 import { qstash } from "@/lib/qstash";
 import { env } from "@/lib/env";
 import { requireAdmin, toError, type ActionResult } from "./guard";
@@ -47,7 +47,28 @@ const postSchema = z.object({
     .union([z.coerce.number().int(), z.null()])
     .optional()
     .transform((v) => v ?? null),
+  sendAs: z.enum(["bot", "user"]).default("bot"),
 });
+
+async function resolveSendAsAdminId(
+  sendAs: "bot" | "user",
+  adminId: number,
+): Promise<number | null> {
+  if (sendAs === "bot") return null;
+  const [admin] = await db
+    .select({
+      mtprotoSessionEnc: admins.mtprotoSessionEnc,
+    })
+    .from(admins)
+    .where(eq(admins.id, adminId))
+    .limit(1);
+  if (!admin || !admin.mtprotoSessionEnc) {
+    throw new Error(
+      "選了「我的帳號」但你還沒到 /mtproto 綁定 Telegram。請先綁定再回來。",
+    );
+  }
+  return adminId;
+}
 
 async function scheduleQstash(postId: number, sendAt: Date): Promise<string> {
   const url = `${env().NEXT_PUBLIC_BASE_URL}/api/cron/send-scheduled?id=${postId}`;
@@ -63,7 +84,7 @@ async function scheduleQstash(postId: number, sendAt: Date): Promise<string> {
 
 export async function createPost(input: unknown): Promise<ActionResult> {
   try {
-    await requireAdmin();
+    const guard = await requireAdmin();
     const data = postSchema.parse(input);
     // staging 模式直接靠 copyMessage、不需要 content 本身有東西
     if (
@@ -76,6 +97,7 @@ export async function createPost(input: unknown): Promise<ActionResult> {
     if (data.sendAt.getTime() < Date.now() - 60_000) {
       throw new Error("發送時間不可為過去");
     }
+    const sendAsAdminId = await resolveSendAsAdminId(data.sendAs, guard.adminId);
     const [row] = await db
       .insert(scheduledPosts)
       .values({
@@ -84,6 +106,8 @@ export async function createPost(input: unknown): Promise<ActionResult> {
         targetChatIds: data.targetChatIds,
         sendAt: data.sendAt,
         stagingMessageId: data.stagingMessageId,
+        sendAs: data.sendAs,
+        sendAsAdminId,
         status: "pending",
       })
       .returning();
@@ -111,9 +135,11 @@ export async function createPost(input: unknown): Promise<ActionResult> {
 
 export async function updatePost(input: unknown): Promise<ActionResult> {
   try {
-    await requireAdmin();
+    const guard = await requireAdmin();
     const data = postSchema.parse(input);
     if (!data.id) throw new Error("缺少 id");
+
+    const sendAsAdminId = await resolveSendAsAdminId(data.sendAs, guard.adminId);
 
     const [existing] = await db
       .select()
@@ -142,6 +168,8 @@ export async function updatePost(input: unknown): Promise<ActionResult> {
         targetChatIds: data.targetChatIds,
         sendAt: data.sendAt,
         stagingMessageId: data.stagingMessageId,
+        sendAs: data.sendAs,
+        sendAsAdminId,
         error: null,
         qstashMessageId: null,
         updatedAt: new Date(),
