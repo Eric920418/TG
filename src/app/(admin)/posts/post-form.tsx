@@ -351,10 +351,19 @@ export function PostForm({
             <Label htmlFor="dpreview">關閉連結預覽</Label>
           </div>
         </div>
+        </>
+        )}
 
         <div className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
           <div className="flex items-center justify-between">
-            <Label>媒體（選填，最多 {TELEGRAM_ALBUM_MAX} 張，多張會以相簿發送）</Label>
+            <Label>
+              媒體（選填，最多 {TELEGRAM_ALBUM_MAX} 張，多張會以相簿發送）
+              {useStaging && (
+                <span className="ml-1 text-xs text-zinc-500">
+                  · staging 模式下，此處上傳的會以「第二條訊息」單獨發送
+                </span>
+              )}
+            </Label>
             <span className="text-xs text-zinc-500">
               {mediaList.length} / {TELEGRAM_ALBUM_MAX}
             </span>
@@ -437,8 +446,6 @@ export function PostForm({
             支援格式：圖片 ≤ 10 MB；影片 / GIF / 檔案 ≤ 50 MB（Telegram bot 上傳上限）
           </p>
         </div>
-        </>
-        )}
 
         <div className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
           <Label>按鈕{useStaging ? "（套用會覆蓋 staging 原訊息的按鈕；留空則保留原狀）" : ""}</Label>

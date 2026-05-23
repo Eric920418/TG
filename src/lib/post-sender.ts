@@ -137,6 +137,7 @@ async function sendViaBot(
       }
       return results;
     }
+    const extraMedia = content.media ?? [];
     for (const chatId of chatIds) {
       try {
         const sent = await bot.api.copyMessage(
@@ -151,6 +152,32 @@ async function sendViaBot(
             });
           } catch {
             /* edit fail 不阻塞 */
+          }
+        }
+        // staging + 額外媒體：發第二則訊息
+        if (extraMedia.length > 0) {
+          try {
+            if (extraMedia.length === 1) {
+              const m = extraMedia[0];
+              if (m.type === "photo") await bot.api.sendPhoto(chatId, m.url);
+              else if (m.type === "video") await bot.api.sendVideo(chatId, m.url);
+              else if (m.type === "animation")
+                await bot.api.sendAnimation(chatId, m.url);
+              else await bot.api.sendDocument(chatId, m.url);
+            } else {
+              const media = extraMedia.map((m) => ({
+                type: m.type === "animation" ? "video" : m.type,
+                media: m.url,
+              })) as Parameters<typeof bot.api.sendMediaGroup>[1];
+              await bot.api.sendMediaGroup(chatId, media);
+            }
+          } catch (err) {
+            // 主訊息已成功；附加 album 失敗只記 log，不覆蓋主訊息結果
+            results.push({
+              chatId,
+              error: `主訊息已發送但附加媒體失敗：${errorMessage(err)}`,
+            });
+            continue;
           }
         }
         results.push({ chatId, messageId: sent.message_id });
@@ -302,6 +329,24 @@ async function sendViaUser(
         baseMessage.file = files.length === 1 ? files[0] : files;
       }
 
+      // staging + 額外媒體：預先把額外 media 轉成 user 可送的 file array
+      const stagingExtraFiles: Array<string | CustomFile> = [];
+      if (stagingMessageId != null && content.media && content.media.length > 0) {
+        for (const m of content.media) {
+          try {
+            stagingExtraFiles.push(await mediaToFileLike(m.url, m.type));
+          } catch (err) {
+            for (const chatId of chatIds) {
+              results.push({
+                chatId,
+                error: `轉附加檔失敗 (${m.type})：${errorMessage(err)}`,
+              });
+            }
+            return;
+          }
+        }
+      }
+
       for (const chatId of chatIds) {
         try {
           const sent = await client.sendMessage(chatId, {
@@ -314,6 +359,27 @@ async function sendViaUser(
             "id" in sent && typeof sent.id !== "undefined"
               ? Number(sent.id)
               : undefined;
+
+          // staging + 額外 media：發第二則 album
+          if (stagingExtraFiles.length > 0) {
+            try {
+              await client.sendMessage(chatId, {
+                message: "",
+                file:
+                  stagingExtraFiles.length === 1
+                    ? stagingExtraFiles[0]
+                    : stagingExtraFiles,
+              });
+            } catch (err) {
+              results.push({
+                chatId,
+                error: `主訊息已發送但附加媒體失敗：${errorMessage(err)}`,
+              });
+              await sleep(USER_SEND_DELAY_MS);
+              continue;
+            }
+          }
+
           results.push({ chatId, messageId: msgId });
 
           await redis().incr(dailyKey);
