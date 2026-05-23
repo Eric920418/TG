@@ -112,10 +112,26 @@ export const stagingMessages = pgTable("staging_messages", {
   label: text("label").notNull(),
   hasMedia: boolean("has_media").notNull().default(false),
   capturedByAdminId: integer("captured_by_admin_id"),
+  // bot 抓 staging 時 snapshot 進來（避開後續 MTProto entity cache 限制）
+  text: text("text"),
+  entities: jsonb("entities").$type<StoredEntity[]>(),
+  mediaType: text("media_type"), // photo / video / animation / document / sticker / null
+  mediaFileId: text("media_file_id"), // bot file_id
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });
+
+/** 來自 grammY ctx.message.entities / .caption_entities 的 snapshot */
+export type StoredEntity = {
+  type: string;
+  offset: number;
+  length: number;
+  url?: string;
+  user?: { id: number };
+  language?: string;
+  custom_emoji_id?: string;
+};
 
 export const buttonTemplates = pgTable("button_templates", {
   id: serial("id").primaryKey(),

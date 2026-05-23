@@ -47,6 +47,89 @@ function toGramjsMarkup(
   return new Api.ReplyInlineMarkup({ rows });
 }
 
+/**
+ * grammY/Bot API 風格 entities 轉成 MTProto Api.TypeMessageEntity[]。
+ * grammY 用 UTF-16 offset/length（跟 MTProto 一樣），可直接 1:1 對應。
+ */
+function grammyEntitiesToMtproto(
+  text: string,
+  entities: import("@/lib/db/schema").StoredEntity[] | null | undefined,
+): Api.TypeMessageEntity[] | undefined {
+  void text; // 預留：未來若要驗證 offset 範圍可用
+  if (!entities || entities.length === 0) return undefined;
+  const result: Api.TypeMessageEntity[] = [];
+  for (const e of entities) {
+    const base = { offset: e.offset, length: e.length };
+    switch (e.type) {
+      case "bold":
+        result.push(new Api.MessageEntityBold(base));
+        break;
+      case "italic":
+        result.push(new Api.MessageEntityItalic(base));
+        break;
+      case "underline":
+        result.push(new Api.MessageEntityUnderline(base));
+        break;
+      case "strikethrough":
+        result.push(new Api.MessageEntityStrike(base));
+        break;
+      case "spoiler":
+        result.push(new Api.MessageEntitySpoiler(base));
+        break;
+      case "code":
+        result.push(new Api.MessageEntityCode(base));
+        break;
+      case "pre":
+        result.push(
+          new Api.MessageEntityPre({ ...base, language: e.language ?? "" }),
+        );
+        break;
+      case "blockquote":
+        result.push(new Api.MessageEntityBlockquote({ ...base, collapsed: false }));
+        break;
+      case "url":
+        result.push(new Api.MessageEntityUrl(base));
+        break;
+      case "text_link":
+        if (e.url)
+          result.push(new Api.MessageEntityTextUrl({ ...base, url: e.url }));
+        break;
+      case "mention":
+        result.push(new Api.MessageEntityMention(base));
+        break;
+      case "hashtag":
+        result.push(new Api.MessageEntityHashtag(base));
+        break;
+      case "cashtag":
+        result.push(new Api.MessageEntityCashtag(base));
+        break;
+      case "bot_command":
+        result.push(new Api.MessageEntityBotCommand(base));
+        break;
+      case "email":
+        result.push(new Api.MessageEntityEmail(base));
+        break;
+      case "phone_number":
+        result.push(new Api.MessageEntityPhone(base));
+        break;
+      case "custom_emoji":
+        if (e.custom_emoji_id) {
+          result.push(
+            new Api.MessageEntityCustomEmoji({
+              ...base,
+              documentId: BigInt(e.custom_emoji_id) as unknown as bigInt.BigInteger,
+            }),
+          );
+        }
+        break;
+      default:
+        // 未知 entity 類型跳過、不阻塞發送
+        break;
+    }
+  }
+  return result;
+}
+
 function todayYMD(): string {
   const d = new Date();
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
@@ -286,35 +369,40 @@ async function sendViaUser(
           }
           return;
         }
-        // bot DM 訊息：用 messages.GetMessages（無 peer 版）直接以 message_id 撈，
-        // 繞過 entity cache（剛 login 的 session 沒見過 bot PeerUser）。
-        // 此 API 適用於 private chats（你跟 bot DM）。
-        const result = await client.invoke(
-          new Api.messages.GetMessages({
-            id: [
-              new Api.InputMessageID({ id: Number(staging.messageId) }),
-            ],
-          }),
-        );
-        const fetchedMessages =
-          "messages" in result ? result.messages : [];
-        const m = fetchedMessages.find(
-          (x): x is Api.Message =>
-            x.className === "Message" && (x as Api.Message).id === Number(staging.messageId),
-        );
-        if (!m) {
+        // 直接從 DB 讀 staging snapshot（避開 MTProto entity / session 同步問題）
+        if (!staging.text && !staging.mediaFileId) {
           for (const chatId of chatIds) {
             results.push({
               chatId,
-              error: `找不到 staging 訊息（bot DM 內 id=${staging.messageId}）。可能已被刪除、或 bot DM 不在你 Telegram 的對話列表（請在 Telegram 開 @${env().TELEGRAM_BOT_USERNAME} 對話框並重發一則任意訊息再回後台重試）。`,
+              error: `staging #${stagingMessageId} 缺 snapshot 內容（可能是舊版本捕獲的）。請在 Telegram 重新傳一則訊息給 bot 取得新 staging 再試。`,
             });
           }
           return;
         }
+        const entities = grammyEntitiesToMtproto(staging.text ?? "", staging.entities);
+        let stagingFile: string | CustomFile | undefined;
+        if (staging.mediaFileId && staging.mediaType) {
+          try {
+            stagingFile = await mediaToFileLike(
+              staging.mediaFileId,
+              staging.mediaType === "sticker"
+                ? "document"
+                : (staging.mediaType as "photo" | "video" | "animation" | "document"),
+            );
+          } catch (err) {
+            for (const chatId of chatIds) {
+              results.push({
+                chatId,
+                error: `轉 staging 媒體失敗：${errorMessage(err)}`,
+              });
+            }
+            return;
+          }
+        }
         baseMessage = {
-          message: m.message ?? "",
-          entities: m.entities,
-          file: m.media ?? undefined,
+          message: staging.text ?? "",
+          entities,
+          file: stagingFile,
         };
       } else if (content.media && content.media.length > 0) {
         // 非 staging 模式：把 bot 上傳的 file_id 轉成 user MTProto 可送的 file

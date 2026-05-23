@@ -16,8 +16,8 @@ export function registerStagingHandler(bot: Bot) {
     if (!ctx.from) return next();
 
     // 跳過指令訊息（/login, /start 之類）
-    const text = ctx.message.text;
-    if (text && text.startsWith("/")) return next();
+    const commandText = ctx.message.text;
+    if (commandText && commandText.startsWith("/")) return next();
 
     // 必須是已註冊的 admin 才存（避免任意人 DM bot 灌爆 staging）
     const [admin] = await db
@@ -63,6 +63,29 @@ export function registerStagingHandler(bot: Bot) {
           ? rawLabel.slice(0, 80) + (rawLabel.length > 80 ? "…" : "")
           : (mediaTag ?? "（無內容）");
 
+    // Snapshot 完整訊息資料以便 user 模式發送（繞過 MTProto entity cache）
+    const text = m.text ?? m.caption ?? "";
+    const entities = m.entities ?? m.caption_entities ?? null;
+    let mediaType: string | null = null;
+    let mediaFileId: string | null = null;
+    if (m.photo) {
+      mediaType = "photo";
+      // photo 是陣列，取最大那張
+      mediaFileId = m.photo[m.photo.length - 1].file_id;
+    } else if (m.video) {
+      mediaType = "video";
+      mediaFileId = m.video.file_id;
+    } else if (m.animation) {
+      mediaType = "animation";
+      mediaFileId = m.animation.file_id;
+    } else if (m.document) {
+      mediaType = "document";
+      mediaFileId = m.document.file_id;
+    } else if (m.sticker) {
+      mediaType = "sticker";
+      mediaFileId = m.sticker.file_id;
+    }
+
     try {
       const [row] = await db
         .insert(stagingMessages)
@@ -72,6 +95,10 @@ export function registerStagingHandler(bot: Bot) {
           label,
           hasMedia,
           capturedByAdminId: admin.id,
+          text: text || null,
+          entities: entities ?? null,
+          mediaType,
+          mediaFileId,
         })
         .returning();
 
