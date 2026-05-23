@@ -286,11 +286,12 @@ async function sendViaUser(
           }
           return;
         }
-        // staging.chatId 是「bot 視角的 chat_id」= 你自己的 user_id；
-        // user-mode 拿這個 id 會被 Telegram 誤判為 Saved Messages 找不到訊息。
-        // 改用 bot 的 user_id（token 第一段）當 entity = 你跟 bot 的 DM。
-        const botUserId = Number(env().TELEGRAM_BOT_TOKEN.split(":")[0]);
-        const stagingChatEntity = await client.getInputEntity(botUserId);
+        // bot DM 的 entity：因 user session 沒 cache 過 bot 的 PeerUser，
+        // 直接傳 numeric id 會 'Could not find input entity'。改用 username
+        // 走 ResolveUsername API（不需要 dialog 歷史）。
+        const stagingChatEntity = await client.getInputEntity(
+          "@" + env().TELEGRAM_BOT_USERNAME,
+        );
         const msgs = await client.getMessages(stagingChatEntity, {
           ids: [Number(staging.messageId)],
         });
