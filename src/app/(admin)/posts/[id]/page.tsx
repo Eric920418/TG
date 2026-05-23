@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, isNotNull, or } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { admins, groups, scheduledPosts, stagingMessages } from "@/lib/db/schema";
@@ -34,6 +34,12 @@ export default async function EditPostPage({
     db
       .select()
       .from(stagingMessages)
+      .where(
+        or(
+          isNotNull(stagingMessages.text),
+          isNotNull(stagingMessages.mediaFileId),
+        ),
+      )
       .orderBy(desc(stagingMessages.id))
       .limit(50),
     session.adminId
