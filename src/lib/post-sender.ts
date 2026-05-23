@@ -259,9 +259,11 @@ async function sendViaUser(
           }
           return;
         }
-        const stagingChatEntity = await client.getInputEntity(
-          Number(staging.chatId),
-        );
+        // staging.chatId 是「bot 視角的 chat_id」= 你自己的 user_id；
+        // user-mode 拿這個 id 會被 Telegram 誤判為 Saved Messages 找不到訊息。
+        // 改用 bot 的 user_id（token 第一段）當 entity = 你跟 bot 的 DM。
+        const botUserId = Number(env().TELEGRAM_BOT_TOKEN.split(":")[0]);
+        const stagingChatEntity = await client.getInputEntity(botUserId);
         const msgs = await client.getMessages(stagingChatEntity, {
           ids: [Number(staging.messageId)],
         });
@@ -270,7 +272,7 @@ async function sendViaUser(
           for (const chatId of chatIds) {
             results.push({
               chatId,
-              error: `staging Telegram 訊息已被刪除`,
+              error: `找不到 staging 訊息（bot DM 內 id=${staging.messageId}），可能已被刪除或 bot 不在你聯絡人。請在 Telegram 重新傳該訊息給 bot 取得新 staging。`,
             });
           }
           return;
