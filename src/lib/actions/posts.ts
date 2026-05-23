@@ -65,8 +65,13 @@ export async function createPost(input: unknown): Promise<ActionResult> {
   try {
     await requireAdmin();
     const data = postSchema.parse(input);
-    if (!data.content.text && (!data.content.media || data.content.media.length === 0)) {
-      throw new Error("必須有文字或媒體");
+    // staging 模式直接靠 copyMessage、不需要 content 本身有東西
+    if (
+      data.stagingMessageId == null &&
+      !data.content.text &&
+      (!data.content.media || data.content.media.length === 0)
+    ) {
+      throw new Error("必須有文字或媒體（或從 bot 收到的訊息匯入）");
     }
     if (data.sendAt.getTime() < Date.now() - 60_000) {
       throw new Error("發送時間不可為過去");
