@@ -286,21 +286,27 @@ async function sendViaUser(
           }
           return;
         }
-        // bot DM 的 entity：因 user session 沒 cache 過 bot 的 PeerUser，
-        // 直接傳 numeric id 會 'Could not find input entity'。改用 username
-        // 走 ResolveUsername API（不需要 dialog 歷史）。
-        const stagingChatEntity = await client.getInputEntity(
-          "@" + env().TELEGRAM_BOT_USERNAME,
+        // bot DM 訊息：用 messages.GetMessages（無 peer 版）直接以 message_id 撈，
+        // 繞過 entity cache（剛 login 的 session 沒見過 bot PeerUser）。
+        // 此 API 適用於 private chats（你跟 bot DM）。
+        const result = await client.invoke(
+          new Api.messages.GetMessages({
+            id: [
+              new Api.InputMessageID({ id: Number(staging.messageId) }),
+            ],
+          }),
         );
-        const msgs = await client.getMessages(stagingChatEntity, {
-          ids: [Number(staging.messageId)],
-        });
-        const m = msgs[0];
+        const fetchedMessages =
+          "messages" in result ? result.messages : [];
+        const m = fetchedMessages.find(
+          (x): x is Api.Message =>
+            x.className === "Message" && (x as Api.Message).id === Number(staging.messageId),
+        );
         if (!m) {
           for (const chatId of chatIds) {
             results.push({
               chatId,
-              error: `找不到 staging 訊息（bot DM 內 id=${staging.messageId}），可能已被刪除或 bot 不在你聯絡人。請在 Telegram 重新傳該訊息給 bot 取得新 staging。`,
+              error: `找不到 staging 訊息（bot DM 內 id=${staging.messageId}）。可能已被刪除、或 bot DM 不在你 Telegram 的對話列表（請在 Telegram 開 @${env().TELEGRAM_BOT_USERNAME} 對話框並重發一則任意訊息再回後台重試）。`,
             });
           }
           return;
