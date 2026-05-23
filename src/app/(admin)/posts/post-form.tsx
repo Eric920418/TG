@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ErrorBanner } from "@/components/error-banner";
 import { ButtonEditor } from "@/components/button-editor";
 import { createPost, updatePost } from "@/lib/actions/posts";
+import { deleteStagingMessage } from "@/lib/actions/staging";
 import type { ScheduledPostContent, TgButtonRow } from "@/lib/db/schema";
 
 export type PostFormInitial = {
@@ -98,6 +99,21 @@ export function PostForm({
     setTargets((t) =>
       t.includes(chatId) ? t.filter((c) => c !== chatId) : [...t, chatId],
     );
+  }
+
+  function deleteStaging() {
+    if (stagingMessageId == null) return;
+    if (!confirm(`確定刪除素材 #${stagingMessageId}？`)) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await deleteStagingMessage(stagingMessageId);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      setStagingMessageId(null);
+      router.refresh();
+    });
   }
 
   async function uploadFile(idx: number, file: File, fallbackKind?: MediaKind) {
@@ -213,24 +229,37 @@ export function PostForm({
           </div>
           {useStaging && (
             <div className="mt-2 space-y-1.5">
-              <select
-                value={stagingMessageId ?? ""}
-                onChange={(e) =>
-                  setStagingMessageId(
-                    e.target.value ? Number(e.target.value) : null,
-                  )
-                }
-                className="h-9 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-              >
-                {stagings.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    #{s.id} · {s.hasMedia ? "📎 " : ""}
-                    {s.label} · {new Date(s.createdAt).toLocaleString("zh-TW")}
-                  </option>
-                ))}
-              </select>
+              <div className="flex gap-2">
+                <select
+                  value={stagingMessageId ?? ""}
+                  onChange={(e) =>
+                    setStagingMessageId(
+                      e.target.value ? Number(e.target.value) : null,
+                    )
+                  }
+                  className="h-9 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                >
+                  {stagings.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      #{s.id} · {s.hasMedia ? "📎 " : ""}
+                      {s.label} · {new Date(s.createdAt).toLocaleString("zh-TW")}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={deleteStaging}
+                  disabled={pending || stagingMessageId == null}
+                  title="刪除此素材"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  刪除素材
+                </Button>
+              </div>
               <p className="text-xs text-zinc-500">
-                提示：把含動態貼紙 / 富格式的訊息私訊或轉發給 @Kkk696kkk_admin_bot，會自動出現在這個下拉。
+                提示：把含動態貼紙 / 富格式的訊息私訊或轉發給 @Kkk696kkk_admin_bot，會自動出現在這個下拉。被「待發 / 發送中」排程引用的素材無法刪除，請先取消那些排程。
               </p>
             </div>
           )}
