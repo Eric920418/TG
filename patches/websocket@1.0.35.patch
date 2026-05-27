@@ -1,0 +1,104 @@
+diff --git a/lib/WebSocketClient.js b/lib/WebSocketClient.js
+index fb7572b382de289f7fa3ff35a9647f118f3bd4eb..9f6ff5afa475f6f4e1db58d4c93f51df07bbabd5 100644
+--- a/lib/WebSocketClient.js
++++ b/lib/WebSocketClient.js
+@@ -20,7 +20,28 @@ var util = require('util');
+ var EventEmitter = require('events').EventEmitter;
+ var http = require('http');
+ var https = require('https');
+-var url = require('url');
++function legacyParse(input) {
++    var u = new URL(input);
++    var search = u.search || '';
++    var auth = null;
++    if (u.username) {
++        auth = u.password ? (u.username + ':' + u.password) : u.username;
++    }
++    return {
++        protocol: u.protocol,
++        slashes: true,
++        auth: auth,
++        host: u.host,
++        port: u.port || null,
++        hostname: u.hostname,
++        hash: u.hash || null,
++        search: search || null,
++        query: search ? search.slice(1) : null,
++        pathname: u.pathname,
++        path: u.pathname + search,
++        href: u.href
++    };
++}
+ var crypto = require('crypto');
+ var WebSocketConnection = require('./WebSocketConnection');
+ var bufferAllocUnsafe = utils.bufferAllocUnsafe;
+@@ -133,7 +154,7 @@ WebSocketClient.prototype.connect = function(requestUrl, protocols, origin, head
+     this.origin = origin;
+ 
+     if (typeof(requestUrl) === 'string') {
+-        this.url = url.parse(requestUrl);
++        this.url = legacyParse(requestUrl);
+     }
+     else {
+         this.url = requestUrl; // in case an already parsed url is passed in.
+diff --git a/lib/WebSocketRequest.js b/lib/WebSocketRequest.js
+index de63cbdabc030a32785d661239d381da4b7ffeac..5736a0756f8f96d0622863ad8a90ee881cc996e0 100644
+--- a/lib/WebSocketRequest.js
++++ b/lib/WebSocketRequest.js
+@@ -16,7 +16,46 @@
+ 
+ var crypto = require('crypto');
+ var util = require('util');
+-var url = require('url');
++function legacyParse(input, parseQueryString) {
++    var u;
++    try {
++        u = new URL(input);
++    } catch (e) {
++        u = new URL(input, 'http://_placeholder_');
++    }
++    var search = u.search || '';
++    var query;
++    if (parseQueryString) {
++        query = {};
++        u.searchParams.forEach(function(v, k) {
++            if (k in query) {
++                query[k] = [].concat(query[k], v);
++            } else {
++                query[k] = v;
++            }
++        });
++    } else {
++        query = search ? search.slice(1) : null;
++    }
++    var auth = null;
++    if (u.username) {
++        auth = u.password ? (u.username + ':' + u.password) : u.username;
++    }
++    return {
++        protocol: u.protocol,
++        slashes: true,
++        auth: auth,
++        host: u.host,
++        port: u.port || null,
++        hostname: u.hostname,
++        hash: u.hash || null,
++        search: search || null,
++        query: query,
++        pathname: u.pathname,
++        path: u.pathname + search,
++        href: u.href
++    };
++}
+ var EventEmitter = require('events').EventEmitter;
+ var WebSocketConnection = require('./WebSocketConnection');
+ 
+@@ -112,7 +151,7 @@ WebSocketRequest.prototype.readHandshake = function() {
+     var request = this.httpRequest;
+ 
+     // Decode URL
+-    this.resourceURL = url.parse(this.resource, true);
++    this.resourceURL = legacyParse(this.resource, true);
+ 
+     this.host = request.headers['host'];
+     if (!this.host) {

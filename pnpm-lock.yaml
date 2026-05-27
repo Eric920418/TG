@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  websocket@1.0.35:
+    hash: 70c39e9eb01e58d9a8dba83fd1c1b6aad44351261e83807715aa92d1c00562ce
+    path: patches/websocket@1.0.35.patch
+
 importers:
 
   .:
@@ -6278,7 +6283,7 @@ snapshots:
       socks: 2.8.9
       store2: 2.14.4
       ts-custom-error: 3.3.1
-      websocket: 1.0.35
+      websocket: 1.0.35(patch_hash=70c39e9eb01e58d9a8dba83fd1c1b6aad44351261e83807715aa92d1c00562ce)
     optionalDependencies:
       bufferutil: 4.1.0
       utf-8-validate: 5.0.10
@@ -6442,7 +6447,7 @@ snapshots:
 
   webidl-conversions@3.0.1: {}
 
-  websocket@1.0.35:
+  websocket@1.0.35(patch_hash=70c39e9eb01e58d9a8dba83fd1c1b6aad44351261e83807715aa92d1c00562ce):
     dependencies:
       bufferutil: 4.1.0
       debug: 2.6.9

@@ -164,6 +164,12 @@ pnpm tg:set-webhook    # 設 Telegram webhook
 pnpm tg:delete-webhook # 移除 webhook（切換 polling 開發用）
 ```
 
+## 依賴 Patch
+
+`websocket@1.0.35`（`telegram` (gramjs) 的依賴）內部用 Node 已 deprecated 的 `url.parse()`，跑起來會印 `DEP0169` 警告。已用 `pnpm patch` 把兩處改成 WHATWG `new URL()` + legacy 欄位 polyfill，patch 檔在 `patches/websocket@1.0.35.patch`，由 `pnpm-workspace.yaml` 的 `patchedDependencies` 註冊，重裝會自動套用。
+
+> 不能把 `useWSS: true` 改成 `false` 來繞過 —— Vercel serverless 不允許 raw TCP outbound，必須走 WSS 連 Telegram DC。
+
 ## Vercel Cron
 
 `vercel.json` 已註冊兩條：
