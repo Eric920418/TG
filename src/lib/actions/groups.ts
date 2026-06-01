@@ -25,6 +25,7 @@ const groupSchema = z.object({
   type: z.enum(["main", "sub"]),
   isActive: z.boolean().default(true),
   simplifiedPolicy: z.enum(["strict", "off"]).default("strict"),
+  linkPolicy: z.enum(["strict", "off"]).default("strict"),
   // 已棄用單一欄位，保留欄位避免破壞 form
   syncTargetChatId: z.preprocess(
     (v) => (v === "" || v == null ? null : Number(v)),
@@ -81,6 +82,7 @@ export async function upsertGroup(input: unknown): Promise<ActionResult> {
           type: data.type,
           isActive: data.isActive,
           simplifiedPolicy: data.simplifiedPolicy,
+          linkPolicy: data.linkPolicy,
           syncTargetChatId: data.syncTargetChatId,
           syncTargetChatIds: data.syncTargetChatIds,
           raidThreshold: data.raidThreshold,

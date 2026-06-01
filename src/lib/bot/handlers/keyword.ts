@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { keywordBlacklist, warnings, type KeywordRow } from "@/lib/db/schema";
 import { getGroupByChatId } from "@/lib/bot/group-cache";
 import { isAdmin } from "@/lib/bot/admin-check";
+import { containsLink, containsMention } from "@/lib/links";
 import { log, errorMessage } from "@/lib/log";
 
 async function loadKeywords(chatId: number): Promise<KeywordRow[]> {
@@ -37,9 +38,9 @@ function matches(text: string, row: KeywordRow): boolean {
         return false;
       }
     case "link":
-      return /(https?:\/\/|t\.me\/|@[a-zA-Z0-9_]{3,})/i.test(text);
+      return containsLink(text);
     case "mention":
-      return /@[a-zA-Z0-9_]{3,}/.test(text);
+      return containsMention(text);
     default:
       return false;
   }

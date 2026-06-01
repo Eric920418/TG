@@ -19,6 +19,7 @@ type Draft = {
   type: "main" | "sub";
   isActive: boolean;
   simplifiedPolicy: "strict" | "off";
+  linkPolicy: "strict" | "off";
   syncTargetChatId: string; // deprecated 保留
   syncTargetChatIds: number[];
   raidThreshold: string;
@@ -36,6 +37,7 @@ function emptyDraft(): Draft {
     type: "sub",
     isActive: true,
     simplifiedPolicy: "strict",
+    linkPolicy: "strict",
     syncTargetChatId: "",
     syncTargetChatIds: [],
     raidThreshold: "5",
@@ -55,6 +57,7 @@ function toDraft(g: Group): Draft {
     type: g.type,
     isActive: g.isActive,
     simplifiedPolicy: g.simplifiedPolicy,
+    linkPolicy: g.linkPolicy,
     syncTargetChatId: g.syncTargetChatId != null ? String(g.syncTargetChatId) : "",
     syncTargetChatIds: (g.syncTargetChatIds ?? []).map(Number),
     raidThreshold: String(g.raidThreshold),
@@ -70,9 +73,6 @@ export function GroupsClient({ initial }: { initial: Group[] }) {
   const router = useRouter();
   // 直接用 prop，避免 useState 凍住舊資料導致 router.refresh 後列表不更新
   const rows = initial;
-  const subOptions = rows
-    .filter((g) => g.type === "sub" && g.isActive)
-    .map((g) => ({ chatId: Number(g.chatId), title: g.title }));
   const existingActiveMain = rows.find((g) => g.type === "main" && g.isActive);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -176,53 +176,22 @@ export function GroupsClient({ initial }: { initial: Group[] }) {
                 </select>
               </Field>
               <Field
-                label="同步目標子群（main 限定，多選）"
-                hint="主群發訊息會 fan-out 到此處勾選的所有子群。子群本身不用設這欄。"
+                label="連結政策"
+                hint="strict：非管理員發連結（http/https、t.me、@用戶名）會被刪除+警告，達上限禁言。"
               >
-                {draft.type === "main" ? (
-                  subOptions.length === 0 ? (
-                    <p className="text-xs text-zinc-500">
-                      尚無啟用中的子群可選。建立子群並設為 sub 後會出現在這。
-                    </p>
-                  ) : (
-                    <div className="space-y-1.5 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
-                      {subOptions.map((s) => {
-                        const checked = draft.syncTargetChatIds.includes(s.chatId);
-                        return (
-                          <label
-                            key={s.chatId}
-                            className="flex items-center gap-2 cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() =>
-                                setDraft({
-                                  ...draft,
-                                  syncTargetChatIds: checked
-                                    ? draft.syncTargetChatIds.filter(
-                                        (id) => id !== s.chatId,
-                                      )
-                                    : [...draft.syncTargetChatIds, s.chatId],
-                                })
-                              }
-                            />
-                            <span className="text-sm">
-                              {s.title}{" "}
-                              <span className="text-xs text-zinc-500 font-mono">
-                                ({s.chatId})
-                              </span>
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )
-                ) : (
-                  <p className="text-xs text-zinc-500">
-                    此群為 sub，不需指定同步目標。把上方「類型」改成 main 才會出現選項。
-                  </p>
-                )}
+                <select
+                  value={draft.linkPolicy}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      linkPolicy: e.target.value as "strict" | "off",
+                    })
+                  }
+                  className="h-9 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                >
+                  <option value="strict">strict（刪除+警告）</option>
+                  <option value="off">off（不檢查）</option>
+                </select>
               </Field>
               <Field label="Raid 閾值（X 秒內 N 人加入）">
                 <div className="flex gap-2 items-center">
@@ -280,22 +249,16 @@ export function GroupsClient({ initial }: { initial: Group[] }) {
                 <Label htmlFor="g-active">啟用（停用後 bot 將忽略此群）</Label>
               </div>
             </div>
-            {draft.type === "main" ? (
-              <div className="border-t border-zinc-200 pt-4 dark:border-zinc-800">
-                <ButtonEditor
-                  label="預設按鈕（主群→子群同步時自動附加）"
-                  hint="主群 admin 發訊息同步到子群後，子群版本會在尾端附加這些按鈕（例如「聊天室」「客服」）。"
-                  value={draft.defaultButtons}
-                  onChange={(defaultButtons) =>
-                    setDraft({ ...draft, defaultButtons })
-                  }
-                />
-              </div>
-            ) : (
-              <div className="border-t border-zinc-200 pt-4 text-xs text-zinc-500 dark:border-zinc-800">
-                💡 「預設按鈕」（同步附加給子群）只能在主群（main）設定。把上面「類型」改為 main 後會出現編輯欄。
-              </div>
-            )}
+            <div className="border-t border-zinc-200 pt-4 dark:border-zinc-800">
+              <ButtonEditor
+                label="按鈕（附加到本群 admin 貼文）"
+                hint="本群 admin 發貼文時，bot 會自動掛上這些按鈕。Group/Supergroup 會由 bot 刪除原訊息後重發以附加按鈕（訊息會顯示成 bot 發的）；Channel 則原地附加。留空＝不處理。"
+                value={draft.defaultButtons}
+                onChange={(defaultButtons) =>
+                  setDraft({ ...draft, defaultButtons })
+                }
+              />
+            </div>
             <div className="flex gap-2">
               <Button onClick={save} disabled={pending}>
                 {pending ? "儲存中…" : "儲存"}
@@ -328,7 +291,7 @@ export function GroupsClient({ initial }: { initial: Group[] }) {
                   <p className="text-xs text-zinc-500 font-mono">{String(row.chatId)}</p>
                   <div className="text-xs text-zinc-600 dark:text-zinc-400 grid gap-1 md:grid-cols-2">
                     <span>簡繁政策: {row.simplifiedPolicy}</span>
-                    <span>同步目標: {row.syncTargetChatId != null ? String(row.syncTargetChatId) : "—"}</span>
+                    <span>連結政策: {row.linkPolicy}</span>
                     <span>Raid: {row.raidThreshold} / {row.raidWindowSec}s</span>
                     <span>警告上限: {row.warningLimit} 次</span>
                     <span>禁言: {row.muteDurationSec}s</span>

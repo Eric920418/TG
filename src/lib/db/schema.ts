@@ -73,6 +73,12 @@ export const groups = pgTable(
     })
       .notNull()
       .default("strict"),
+    // 連結政策：strict 則非 admin 發連結會被刪+警告；off 則跳過
+    linkPolicy: text("link_policy", {
+      enum: ["strict", "off"],
+    })
+      .notNull()
+      .default("strict"),
     // [DEPRECATED] 舊單一同步目標欄位，保留向後相容；新 code 一律用 syncTargetChatIds
     syncTargetChatId: bigint("sync_target_chat_id", { mode: "number" }),
     // 連結到所有同步目標子群（主群 fan-out）
@@ -88,7 +94,7 @@ export const groups = pgTable(
     muteDurationSec: integer("mute_duration_sec").notNull().default(86400),
     // 認證題目秒數限制
     verifyTimeoutSec: integer("verify_timeout_sec").notNull().default(300),
-    // 主群同步到子群時自動附加的預設按鈕（例如「聊天室」）
+    // 本群 admin 發貼文時自動附加的按鈕（main/sub 各自獨立；空陣列=不處理）
     defaultButtons: jsonb("default_buttons")
       .$type<TgButtonRow[]>()
       .notNull()

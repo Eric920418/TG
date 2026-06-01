@@ -3,9 +3,10 @@ import { apiThrottler } from "@grammyjs/transformer-throttler";
 import { env } from "@/lib/env";
 import { registerVerifyHandlers } from "./handlers/verify";
 import { registerSimplifiedHandler } from "./handlers/simplified";
+import { registerLinkGuardHandler } from "./handlers/link-guard";
 import { registerKeywordHandler } from "./handlers/keyword";
 import { registerRaidHandler } from "./handlers/raid";
-import { registerBroadcastHandler } from "./handlers/broadcast";
+import { registerButtonAttachHandler } from "./handlers/button-attach";
 import { registerLeaveMonitor } from "./handlers/leave-monitor";
 import { registerLoginHandler } from "./handlers/login";
 import { registerAutoRegisterHandler } from "./handlers/auto-register";
@@ -37,7 +38,7 @@ export async function getBot(): Promise<Bot> {
       console.error("[bot.catch]", err);
     });
 
-    // Handler 順序很重要：login DM → auto-register → staging DM → 認證 → raid → 簡繁 → 關鍵字 → 同步
+    // Handler 順序很重要：login DM → auto-register → staging DM → 認證 → raid → 簡繁 → 禁連結 → 關鍵字 → 按鈕附加（最後）
     registerLoginHandler(cached);
     registerAutoRegisterHandler(cached);
     registerStagingHandler(cached);
@@ -45,8 +46,9 @@ export async function getBot(): Promise<Bot> {
     registerRaidHandler(cached);
     registerLeaveMonitor(cached);
     registerSimplifiedHandler(cached);
+    registerLinkGuardHandler(cached);
     registerKeywordHandler(cached);
-    registerBroadcastHandler(cached);
+    registerButtonAttachHandler(cached);
   }
   if (!initialized) {
     await cached.init();

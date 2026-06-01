@@ -1,0 +1,1 @@
+ALTER TABLE "groups" ADD COLUMN "link_policy" text DEFAULT 'strict' NOT NULL;
