@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { stagingMessages } from "@/lib/db/schema";
 import type { ScheduledPostContent, PostResult } from "@/lib/db/schema";
 import { renderButtons } from "@/lib/buttons";
+import { ALBUM_FOLLOWUP_TEXT } from "@/lib/album-buttons";
 import { redis } from "@/lib/redis";
 import { env } from "@/lib/env";
 import { withClient, sleep } from "@/lib/mtproto/client";
@@ -299,6 +300,12 @@ async function sendViaBot(
             parse_mode: content.parseMode,
           })) as Parameters<typeof bot.api.sendMediaGroup>[1];
           const sent = await bot.api.sendMediaGroup(chatId, media);
+          // 相簿無法掛 inline 按鈕，若有按鈕則在相簿底下補一則按鈕訊息
+          if (keyboard) {
+            await bot.api
+              .sendMessage(chatId, ALBUM_FOLLOWUP_TEXT, { reply_markup: keyboard })
+              .catch(() => {});
+          }
           results.push({ chatId, messageId: sent[0]?.message_id });
         }
       } else if (content.text) {

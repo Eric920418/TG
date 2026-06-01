@@ -41,6 +41,7 @@ const groupSchema = z.object({
     .array(z.array(buttonSchema).max(8))
     .max(8)
     .default([]),
+  buttonAttachEnabled: z.boolean().default(false),
 });
 
 export async function upsertGroup(input: unknown): Promise<ActionResult> {
@@ -91,6 +92,7 @@ export async function upsertGroup(input: unknown): Promise<ActionResult> {
           muteDurationSec: data.muteDurationSec,
           verifyTimeoutSec: data.verifyTimeoutSec,
           defaultButtons: cleanedDefaultButtons,
+          buttonAttachEnabled: data.buttonAttachEnabled,
         })
         .where(eq(groups.id, data.id));
     } else {
@@ -108,6 +110,7 @@ export async function upsertGroup(input: unknown): Promise<ActionResult> {
         muteDurationSec: data.muteDurationSec,
         verifyTimeoutSec: data.verifyTimeoutSec,
         defaultButtons: cleanedDefaultButtons,
+        buttonAttachEnabled: data.buttonAttachEnabled,
       });
     }
     clearGroupCache(data.chatId);

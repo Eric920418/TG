@@ -357,7 +357,7 @@ export function PostForm({
         <div className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
           <div className="flex items-center justify-between">
             <Label>
-              媒體（選填，最多 {TELEGRAM_ALBUM_MAX} 張，多張會以相簿發送）
+              媒體（選填，最多 {TELEGRAM_ALBUM_MAX} 張，多張會以相簿發送；相簿無法掛按鈕，會自動在相簿下方補一則按鈕訊息）
               {useStaging && (
                 <span className="ml-1 text-xs text-zinc-500">
                   · staging 模式下，此處上傳的會以「第二條訊息」單獨發送

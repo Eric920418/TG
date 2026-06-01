@@ -28,6 +28,7 @@ type Draft = {
   muteDurationSec: string;
   verifyTimeoutSec: string;
   defaultButtons: TgButtonRow[];
+  buttonAttachEnabled: boolean;
 };
 
 function emptyDraft(): Draft {
@@ -46,6 +47,7 @@ function emptyDraft(): Draft {
     muteDurationSec: "86400",
     verifyTimeoutSec: "300",
     defaultButtons: [],
+    buttonAttachEnabled: false,
   };
 }
 
@@ -66,6 +68,7 @@ function toDraft(g: Group): Draft {
     muteDurationSec: String(g.muteDurationSec),
     verifyTimeoutSec: String(g.verifyTimeoutSec),
     defaultButtons: g.defaultButtons ?? [],
+    buttonAttachEnabled: g.buttonAttachEnabled,
   };
 }
 
@@ -252,12 +255,26 @@ export function GroupsClient({ initial }: { initial: Group[] }) {
             <div className="border-t border-zinc-200 pt-4 dark:border-zinc-800">
               <ButtonEditor
                 label="按鈕（附加到本群 admin 貼文）"
-                hint="本群 admin 發貼文時，bot 會自動掛上這些按鈕。Group/Supergroup 會由 bot 刪除原訊息後重發以附加按鈕（訊息會顯示成 bot 發的）；Channel 則原地附加。留空＝不處理。"
+                hint="本群 admin 發貼文時，bot 會自動掛上這些按鈕。Group/Supergroup 會由 bot 刪除原訊息後重發以附加按鈕（訊息會顯示成 bot 發的）；Channel 則原地附加。多圖相簿無法掛按鈕，會自動在相簿下方補一則按鈕訊息。留空＝不處理。"
                 value={draft.defaultButtons}
                 onChange={(defaultButtons) =>
                   setDraft({ ...draft, defaultButtons })
                 }
               />
+              <div className="mt-3 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={draft.buttonAttachEnabled}
+                  onChange={(e) =>
+                    setDraft({ ...draft, buttonAttachEnabled: e.target.checked })
+                  }
+                  id="g-btn-attach"
+                />
+                <Label htmlFor="g-btn-attach">
+                  啟用按鈕附加（開＝admin 貼文自動加按鈕；可在群內用 <code>/ad on</code> /{" "}
+                  <code>/ad off</code> 即時切換。按鈕內容即使關閉也會保留）
+                </Label>
+              </div>
             </div>
             <div className="flex gap-2">
               <Button onClick={save} disabled={pending}>
@@ -292,6 +309,7 @@ export function GroupsClient({ initial }: { initial: Group[] }) {
                   <div className="text-xs text-zinc-600 dark:text-zinc-400 grid gap-1 md:grid-cols-2">
                     <span>簡繁政策: {row.simplifiedPolicy}</span>
                     <span>連結政策: {row.linkPolicy}</span>
+                    <span>按鈕附加: {row.buttonAttachEnabled ? "開" : "關"}</span>
                     <span>Raid: {row.raidThreshold} / {row.raidWindowSec}s</span>
                     <span>警告上限: {row.warningLimit} 次</span>
                     <span>禁言: {row.muteDurationSec}s</span>

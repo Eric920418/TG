@@ -1,0 +1,1 @@
+ALTER TABLE "groups" ADD COLUMN "button_attach_enabled" boolean DEFAULT false NOT NULL;

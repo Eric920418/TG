@@ -18,6 +18,8 @@
 - **退群雪崩監控**：短時間大量退群通知 admin。
 - **排程貼文**：後台建立排程 → QStash 在指定時間精準觸發 + Vercel Cron 兜底補發；支援文字、單張媒體、多行 inline 按鈕（URL + Copy Text）。
 - **本群按鈕附加**：每個群（main/sub 各自獨立）可設定按鈕；該群 admin 發貼文時 bot 自動附加。**Channel** 原地用 `editMessageReplyMarkup` 附加；**Group/Supergroup** 因 Bot API 無法編輯真人訊息，改由 bot `copyMessage` 重發到同群並帶按鈕、再刪原訊息（該訊息會顯示成 bot 發的）。留空＝不處理。若要乾淨的原地按鈕，主群建議用 Telegram Channel。
+  - **開關（可記憶）**：用 `button_attach_enabled` 控制，**和按鈕內容分離**——關閉時按鈕設定照樣保留，下次開回來直接用。預設關。可在後台「群組設定」勾選，或在群內由 admin 打 `/ad on`、`/ad off` 即時切換（`/ad` 查狀態）。發廣告時開、平常聊天關（關閉時 admin 普通發文不會被重發）。
+  - **相簿（多圖）限制**：Telegram 不允許在相簿（media group）上掛 inline 按鈕。因此多圖貼文會在**相簿下方自動補一則只有按鈕的訊息**（群內路徑用 Redis `SET NX` 對 `media_group_id` 去重，一個相簿只補一次；排程路徑於 `sendMediaGroup` 後補發）。單張照片則按鈕直接掛在照片上。
 - **Bot DM 素材匯入（staging）**：把含 custom_emoji / 動態貼紙 / 富格式的訊息私訊或轉發給 bot，bot 自動 snapshot（text + entities + media file_id）寫進 `staging_messages`；後台排程貼文時可下拉選素材，發送時把資料還原給目標群，保留動態貼紙與富格式。
 - **後台**：Telegram bot DM `/login` 取得連結登入；題庫 / 群組 / 關鍵字 / 排程 / 管理員 / 活動記錄完整 CRUD。
 - **升級套餐廣告位**：後台 `/upgrade` 頁與 Dashboard 底部展示 8 個進階加購功能（AI 客服、多語翻譯、抽獎、CRM 等），純 UI 展示，需聯絡開發者個別開通。
@@ -58,7 +60,7 @@ src/
 ├── lib/
 │   ├── db/                Drizzle schema + client
 │   ├── bot/               grammY bot + handlers
-│   │   └── handlers/      verify / simplified / link-guard / keyword / raid / leave-monitor / button-attach
+│   │   └── handlers/      verify / simplified / link-guard / keyword / raid / leave-monitor / ad-toggle / button-attach
 │   ├── auth/              telegram hash 驗 + session
 │   ├── actions/           server actions（CRUD + posts）
 │   ├── env.ts             zod 環境變數驗證

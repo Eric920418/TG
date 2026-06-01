@@ -3,17 +3,18 @@ import type { InlineKeyboardButton } from "grammy/types";
 import { getGroupByChatId } from "@/lib/bot/group-cache";
 import { isAdmin } from "@/lib/bot/admin-check";
 import { renderButtons, mergeKeyboards } from "@/lib/buttons";
+import { sendAlbumButtonFollowup } from "@/lib/album-buttons";
 import { log, errorMessage } from "@/lib/log";
 
 /**
  * 本群按鈕附加：admin 在群裡發貼文時，自動掛上「該群」設定的 defaultButtons。
+ * 由 group.buttonAttachEnabled 開關控制（可用 /ad on|off 即時切換），預設關。
  *
  * Telegram Bot API 限制：bot 無法在「真人 admin 的群組訊息」上加 inline keyboard
  * （editMessageReplyMarkup 只能編輯 bot 自己發的或 channel post）。因此：
- *   - Group/Supergroup：copyMessage 把內容由 bot 重發到同群並帶上按鈕，再刪原訊息
- *     （該則訊息會變成 bot 發的，失去 admin 署名）。
- *   - Channel：原地 editMessageReplyMarkup（乾淨）。
- * 只有當該群 defaultButtons 非空才會觸發，否則完全不動（子群預設不設按鈕＝正常聊天）。
+ *   - 單則 Group/Supergroup 訊息：copyMessage 由 bot 重發到同群並帶按鈕，再刪原訊息。
+ *   - 相簿（media group）：無法掛按鈕，改在相簿底下補一則只有按鈕的訊息（不刪原相簿）。
+ *   - Channel 單則：原地 editMessageReplyMarkup；Channel 相簿：同樣補一則按鈕訊息。
  */
 export function registerButtonAttachHandler(bot: Bot) {
   // Group / Supergroup：真人 admin 發訊息
@@ -23,9 +24,11 @@ export function registerButtonAttachHandler(bot: Bot) {
     if (chatType !== "group" && chatType !== "supergroup") return next();
     // 避免 bot 重發後再次觸發自己（無限迴圈）
     if (ctx.from.is_bot) return next();
+    // 跳過指令訊息（例如 /ad），否則指令也會被重發
+    if (ctx.message.text?.startsWith("/")) return next();
 
     const group = await getGroupByChatId(ctx.chat.id);
-    if (!group || !group.isActive) return next();
+    if (!group || !group.isActive || !group.buttonAttachEnabled) return next();
 
     const defaultKb = renderButtons(group.defaultButtons);
     if (defaultKb.length === 0) return next();
@@ -33,13 +36,25 @@ export function registerButtonAttachHandler(bot: Bot) {
     // 只處理 admin 的貼文
     if (!(await isAdmin(ctx, ctx.chat.id, ctx.from.id))) return next();
 
+    const chatId = ctx.chat.id;
+
+    // 相簿：無法掛按鈕，改在底下補一則按鈕訊息（Redis 去重，一個相簿只補一次）
+    if (ctx.message.media_group_id) {
+      await sendAlbumButtonFollowup(
+        ctx.api,
+        chatId,
+        ctx.message.media_group_id,
+        defaultKb,
+      );
+      return next();
+    }
+
     const sourceKb =
       ctx.message.reply_markup && "inline_keyboard" in ctx.message.reply_markup
         ? ctx.message.reply_markup.inline_keyboard
         : [];
     const mergedKb = mergeKeyboards(sourceKb, defaultKb);
 
-    const chatId = ctx.chat.id;
     const messageId = ctx.message.message_id;
     try {
       // 先重發（保證內容＋按鈕都在），再刪原訊息
@@ -75,12 +90,24 @@ export function registerButtonAttachHandler(bot: Bot) {
     if (!ctx.channelPost) return next();
 
     const group = await getGroupByChatId(ctx.chat.id);
-    if (!group || !group.isActive) return next();
+    if (!group || !group.isActive || !group.buttonAttachEnabled) return next();
 
     const defaultKb = renderButtons(group.defaultButtons);
     if (defaultKb.length === 0) return next();
 
     const post = ctx.channelPost;
+
+    // 頻道相簿：無法原地掛按鈕，改補一則按鈕訊息
+    if (post.media_group_id) {
+      await sendAlbumButtonFollowup(
+        ctx.api,
+        ctx.chat.id,
+        post.media_group_id,
+        defaultKb,
+      );
+      return next();
+    }
+
     const sourceKb: InlineKeyboardButton[][] =
       post.reply_markup && "inline_keyboard" in post.reply_markup
         ? post.reply_markup.inline_keyboard

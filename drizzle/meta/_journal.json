@@ -50,6 +50,13 @@
       "when": 1780280561586,
       "tag": "0006_happy_quasimodo",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780337627950,
+      "tag": "0007_pale_king_bedlam",
+      "breakpoints": true
     }
   ]
 }

@@ -99,6 +99,10 @@ export const groups = pgTable(
       .$type<TgButtonRow[]>()
       .notNull()
       .default([]),
+    // 按鈕附加開關（與 default_buttons 內容分離；可用群內 /ad on|off 即時切換）
+    buttonAttachEnabled: boolean("button_attach_enabled")
+      .notNull()
+      .default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
