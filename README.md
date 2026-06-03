@@ -11,8 +11,9 @@
 ## 功能
 
 - **入群認證**：新成員自動禁言 → 隨機題庫選擇題 → 答對解禁 / 答錯或超時踢出。
-- **簡體字守門**：用 OpenCC 嚴格策略撤回簡體訊息並警告，達上限自動禁言（避開繁簡同形字誤判）。每群 `link_policy` 之外另有 `simplified_policy` 開關。
-- **禁連結（非管理員）**：子群 `link_policy=strict` 時，非 admin 發送連結（`http/https`、`t.me/`、`@用戶名` 3 字以上）會被刪除 + 警告，達 `warning_limit` 後禁言。admin 豁免。
+- **簡體字守門**：用 OpenCC **逐字**檢測撤回簡體訊息並警告，達上限自動禁言。內建白名單放行「合法繁體/異體/姓氏/一簡對多繁」字（台、范、杰、后、里、干、着、裏、强、准… 見 `src/lib/opencc.ts` `IGNORE_CHARS`），避免誤罰正常用戶。每群有 `simplified_policy` 開關。
+- **禁連結（非管理員）**：子群 `link_policy=strict` 時，非 admin 發送連結（`http/https`、`t.me/`）會被刪除 + 警告，達 `warning_limit` 後禁言。admin 豁免。**不含 `@用戶名` 標記**——群友互相 tag 是正常社交，若要擋 @提及請用關鍵字黑名單的 `mention` 類型。
+- **手動解禁**：admin 在群內**回覆**被禁言者的訊息打 `/unmute`（或 `/unmute <user id>`）即可恢復其發言權限並清空警告計數。
 - **關鍵字 / 連結 / @ 提及黑名單**：可指定 `delete` / `warn` / `ban` 三種動作，全域或單群套用（連結偵測與上面「禁連結」共用 `src/lib/links.ts`）。
 - **防 raid**：短時間大量加入自動觸發全群禁言並通知 admin。
 - **退群雪崩監控**：短時間大量退群通知 admin。
@@ -20,6 +21,7 @@
 - **本群按鈕附加**：每個群（main/sub 各自獨立）可設定按鈕；該群 admin 發貼文時 bot 自動附加。**Channel** 原地用 `editMessageReplyMarkup` 附加；**Group/Supergroup** 因 Bot API 無法編輯真人訊息，改由 bot `copyMessage` 重發到同群並帶按鈕、再刪原訊息（該訊息會顯示成 bot 發的）。留空＝不處理。若要乾淨的原地按鈕，主群建議用 Telegram Channel。
   - **開關（可記憶）**：用 `button_attach_enabled` 控制，**和按鈕內容分離**——關閉時按鈕設定照樣保留，下次開回來直接用。預設關。可在後台「群組設定」勾選，或在群內由 admin 打 `/ad on`、`/ad off` 即時切換（`/ad` 查狀態）。發廣告時開、平常聊天關（關閉時 admin 普通發文不會被重發）。
   - **相簿（多圖）限制**：Telegram 不允許在相簿（media group）上掛 inline 按鈕。因此多圖貼文會在**相簿下方自動補一則只有按鈕的訊息**（群內路徑用 Redis `SET NX` 對 `media_group_id` 去重，一個相簿只補一次；排程路徑於 `sendMediaGroup` 後補發）。單張照片則按鈕直接掛在照片上。
+  - **每列最多 2 個按鈕**：避免手機版按鈕擠成一排被截斷，`renderButtons` 會把每一列限制在 `MAX_BUTTONS_PER_ROW`（預設 2），超過自動換列（例如 5 個 → 2+2+1）；編輯器裡刻意排好的 ≤2 列維持原樣。要改數量改 `src/lib/buttons.ts` 的常數即可。
 - **Bot DM 素材匯入（staging）**：把含 custom_emoji / 動態貼紙 / 富格式的訊息私訊或轉發給 bot，bot 自動 snapshot（text + entities + media file_id）寫進 `staging_messages`；後台排程貼文時可下拉選素材，發送時把資料還原給目標群，保留動態貼紙與富格式。
 - **後台**：Telegram bot DM `/login` 取得連結登入；題庫 / 群組 / 關鍵字 / 排程 / 管理員 / 活動記錄完整 CRUD。
 - **升級套餐廣告位**：後台 `/upgrade` 頁與 Dashboard 底部展示 8 個進階加購功能（AI 客服、多語翻譯、抽獎、CRM 等），純 UI 展示，需聯絡開發者個別開通。
@@ -60,7 +62,7 @@ src/
 ├── lib/
 │   ├── db/                Drizzle schema + client
 │   ├── bot/               grammY bot + handlers
-│   │   └── handlers/      verify / simplified / link-guard / keyword / raid / leave-monitor / ad-toggle / button-attach
+│   │   └── handlers/      verify / simplified / link-guard / keyword / raid / leave-monitor / ad-toggle / unmute / button-attach
 │   ├── auth/              telegram hash 驗 + session
 │   ├── actions/           server actions（CRUD + posts）
 │   ├── env.ts             zod 環境變數驗證

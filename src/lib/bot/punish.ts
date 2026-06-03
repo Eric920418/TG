@@ -1,8 +1,37 @@
-import type { Context } from "grammy";
+import type { Api, Context } from "grammy";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { warnings, type Group } from "@/lib/db/schema";
 import { log, errorMessage } from "@/lib/log";
+
+/** 解禁時恢復的權限（全開） */
+const UNMUTE_PERMS = {
+  can_send_messages: true,
+  can_send_audios: true,
+  can_send_documents: true,
+  can_send_photos: true,
+  can_send_videos: true,
+  can_send_video_notes: true,
+  can_send_voice_notes: true,
+  can_send_polls: true,
+  can_send_other_messages: true,
+  can_add_web_page_previews: true,
+} as const;
+
+/**
+ * 解除某人的禁言：恢復發言權限 + 清掉他的警告計數
+ * （否則他一發言又馬上累積到上限被再次禁言）。
+ */
+export async function unmuteUser(
+  api: Api,
+  chatId: number,
+  userId: number,
+): Promise<void> {
+  await api.restrictChatMember(chatId, userId, UNMUTE_PERMS);
+  await db
+    .delete(warnings)
+    .where(and(eq(warnings.chatId, chatId), eq(warnings.userId, userId)));
+}
 
 /** 達警告上限後套用的禁言權限（全關） */
 const MUTE_PERMS = {

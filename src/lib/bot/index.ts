@@ -7,6 +7,7 @@ import { registerLinkGuardHandler } from "./handlers/link-guard";
 import { registerKeywordHandler } from "./handlers/keyword";
 import { registerRaidHandler } from "./handlers/raid";
 import { registerAdToggleHandler } from "./handlers/ad-toggle";
+import { registerUnmuteHandler } from "./handlers/unmute";
 import { registerButtonAttachHandler } from "./handlers/button-attach";
 import { registerLeaveMonitor } from "./handlers/leave-monitor";
 import { registerLoginHandler } from "./handlers/login";
@@ -50,6 +51,7 @@ export async function getBot(): Promise<Bot> {
     registerLinkGuardHandler(cached);
     registerKeywordHandler(cached);
     registerAdToggleHandler(cached);
+    registerUnmuteHandler(cached);
     registerButtonAttachHandler(cached);
   }
   if (!initialized) {
