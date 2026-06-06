@@ -121,8 +121,17 @@ export async function warnAndMaybeMute(
       });
     }
 
+    // 禁言通知帶「解除禁言」按鈕：違規者的訊息都被刪了，管理員常常沒東西可回覆，
+    // 點這顆按鈕（僅 admin 有效）是最可靠的解禁入口
     await ctx.api
-      .sendMessage(chatId, args.buildMute(info), { parse_mode: "HTML" })
+      .sendMessage(chatId, args.buildMute(info), {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔓 解除禁言（管理員）", callback_data: `unmute:${userId}` }],
+          ],
+        },
+      })
       .catch(() => {});
 
     // 禁言後清除警告計數，下次違規重新累積
