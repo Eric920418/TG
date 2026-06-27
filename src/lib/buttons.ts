@@ -2,10 +2,10 @@ import type { InlineKeyboardButton } from "grammy/types";
 import type { TgButton, TgButtonRow } from "@/lib/db/schema";
 
 /**
- * 每列最多顯示幾個按鈕。Telegram 手機版按鈕過多會擠成一排、文字被截斷，
- * 因此把每一列限制在這個數量；超過的會自動換到下一列（例如 5 個 → 2+2+1）。
+ * 每列按鈕數的預設值。文字長的按鈕在多欄會被截斷（例：「泰花町預約」→「泰花…」），
+ * 因此預設 1（整行最寬、不截斷）；各群可在後台用 buttons_per_row 自行調 1~3。
  */
-export const MAX_BUTTONS_PER_ROW = 2;
+export const MAX_BUTTONS_PER_ROW = 1;
 
 /**
  * 把我們儲存的按鈕結構轉成 Telegram raw API 的 inline_keyboard。
@@ -20,11 +20,13 @@ export function renderButtons(
   maxPerRow: number = MAX_BUTTONS_PER_ROW,
 ): InlineKeyboardButton[][] {
   if (!rows || rows.length === 0) return [];
+  // clamp 1~8：避免傳入 0/負數造成無限迴圈，上限對齊 Telegram 每列上限
+  const per = Math.min(8, Math.max(1, Math.floor(maxPerRow) || 1));
   const out: InlineKeyboardButton[][] = [];
   for (const row of rows) {
     const btns = row.map(toTelegramButton).filter(notEmpty);
-    for (let i = 0; i < btns.length; i += maxPerRow) {
-      out.push(btns.slice(i, i + maxPerRow));
+    for (let i = 0; i < btns.length; i += per) {
+      out.push(btns.slice(i, i + per));
     }
   }
   return out;

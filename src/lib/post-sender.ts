@@ -7,7 +7,8 @@ import { db } from "@/lib/db";
 import { stagingMessages } from "@/lib/db/schema";
 import type { ScheduledPostContent, PostResult } from "@/lib/db/schema";
 import { renderButtons } from "@/lib/buttons";
-import { ALBUM_FOLLOWUP_TEXT } from "@/lib/album-buttons";
+import { ALBUM_FOLLOWUP_FALLBACK } from "@/lib/album-buttons";
+import { getGroupByChatId } from "@/lib/bot/group-cache";
 import { redis } from "@/lib/redis";
 import { env } from "@/lib/env";
 import { withClient, sleep } from "@/lib/mtproto/client";
@@ -301,9 +302,12 @@ async function sendViaBot(
           })) as Parameters<typeof bot.api.sendMediaGroup>[1];
           const sent = await bot.api.sendMediaGroup(chatId, media);
           // 相簿無法掛 inline 按鈕，若有按鈕則在相簿底下補一則按鈕訊息
+          // 文字優先用目標群的自訂 album_button_text，否則用極簡符號
           if (keyboard) {
+            const g = await getGroupByChatId(chatId);
+            const followupText = g?.albumButtonText?.trim() || ALBUM_FOLLOWUP_FALLBACK;
             await bot.api
-              .sendMessage(chatId, ALBUM_FOLLOWUP_TEXT, { reply_markup: keyboard })
+              .sendMessage(chatId, followupText, { reply_markup: keyboard })
               .catch(() => {});
           }
           results.push({ chatId, messageId: sent[0]?.message_id });

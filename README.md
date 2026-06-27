@@ -20,8 +20,8 @@
 - **排程貼文**：後台建立排程 → QStash 在指定時間精準觸發 + Vercel Cron 兜底補發；支援文字、單張媒體、多行 inline 按鈕（URL + Copy Text）。
 - **本群按鈕附加**：每個群（main/sub 各自獨立）可設定按鈕；該群 admin 發貼文時 bot 自動附加。**Channel** 原地用 `editMessageReplyMarkup` 附加；**Group/Supergroup** 因 Bot API 無法編輯真人訊息，改由 bot `copyMessage` 重發到同群並帶按鈕、再刪原訊息（該訊息會顯示成 bot 發的）。留空＝不處理。若要乾淨的原地按鈕，主群建議用 Telegram Channel。
   - **開關（可記憶）**：用 `button_attach_enabled` 控制，**和按鈕內容分離**——關閉時按鈕設定照樣保留，下次開回來直接用。預設關。可在後台「群組設定」勾選，或在群內由 admin 打 `/ad on`、`/ad off` 即時切換（`/ad` 查狀態）。發廣告時開、平常聊天關（關閉時 admin 普通發文不會被重發）。
-  - **相簿（多圖）限制**：Telegram 不允許在相簿（media group）上掛 inline 按鈕。因此多圖貼文會在**相簿下方自動補一則只有按鈕的訊息**（群內路徑用 Redis `SET NX` 對 `media_group_id` 去重，一個相簿只補一次；排程路徑於 `sendMediaGroup` 後補發）。單張照片則按鈕直接掛在照片上。
-  - **每列最多 2 個按鈕**：避免手機版按鈕擠成一排被截斷，`renderButtons` 會把每一列限制在 `MAX_BUTTONS_PER_ROW`（預設 2），超過自動換列（例如 5 個 → 2+2+1）；編輯器裡刻意排好的 ≤2 列維持原樣。要改數量改 `src/lib/buttons.ts` 的常數即可。
+  - **相簿（多圖）限制**：Telegram 不允許在相簿（media group）上掛 inline 按鈕。因此多圖貼文會在**相簿下方自動補一則只有按鈕的訊息**（群內路徑用 Redis `SET NX` 對 `media_group_id` 去重，一個相簿只補一次；排程路徑於 `sendMediaGroup` 後補發）。單張照片則按鈕直接掛在照片上。那則訊息上方文字由每群的 `album_button_text` 自訂（後台設定，例如「👇 點我預約」），留空顯示極簡符號「·」。
+  - **每列按鈕數可調**：避免手機版長文字按鈕被截成「泰花…」，每群可設 `buttons_per_row`（1~3，預設 1＝整行最寬不截斷）。`renderButtons` 把每列限制在此數量，超過自動換列。
 - **Bot DM 素材匯入（staging）**：把含 custom_emoji / 動態貼紙 / 富格式的訊息私訊或轉發給 bot，bot 自動 snapshot（text + entities + media file_id）寫進 `staging_messages`；後台排程貼文時可下拉選素材，發送時把資料還原給目標群，保留動態貼紙與富格式。
 - **後台**：Telegram bot DM `/login` 取得連結登入；題庫 / 群組 / 關鍵字 / 排程 / 管理員 / 活動記錄完整 CRUD。
 - **升級套餐廣告位**：後台 `/upgrade` 頁與 Dashboard 底部展示 8 個進階加購功能（AI 客服、多語翻譯、抽獎、CRM 等），純 UI 展示，需聯絡開發者個別開通。

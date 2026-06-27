@@ -29,6 +29,8 @@ type Draft = {
   verifyTimeoutSec: string;
   defaultButtons: TgButtonRow[];
   buttonAttachEnabled: boolean;
+  buttonsPerRow: string;
+  albumButtonText: string;
 };
 
 function emptyDraft(): Draft {
@@ -48,6 +50,8 @@ function emptyDraft(): Draft {
     verifyTimeoutSec: "300",
     defaultButtons: [],
     buttonAttachEnabled: false,
+    buttonsPerRow: "1",
+    albumButtonText: "",
   };
 }
 
@@ -69,6 +73,8 @@ function toDraft(g: Group): Draft {
     verifyTimeoutSec: String(g.verifyTimeoutSec),
     defaultButtons: g.defaultButtons ?? [],
     buttonAttachEnabled: g.buttonAttachEnabled,
+    buttonsPerRow: String(g.buttonsPerRow ?? 1),
+    albumButtonText: g.albumButtonText ?? "",
   };
 }
 
@@ -274,6 +280,36 @@ export function GroupsClient({ initial }: { initial: Group[] }) {
                   啟用按鈕附加（開＝admin 貼文自動加按鈕；可在群內用 <code>/ad on</code> /{" "}
                   <code>/ad off</code> 即時切換。按鈕內容即使關閉也會保留）
                 </Label>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <Field
+                  label="按鈕每列幾個（1~3）"
+                  hint="文字長的群設 1（整行最寬不被截斷）；文字短想省空間設 2 或 3。"
+                >
+                  <select
+                    value={draft.buttonsPerRow}
+                    onChange={(e) =>
+                      setDraft({ ...draft, buttonsPerRow: e.target.value })
+                    }
+                    className="h-9 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                  >
+                    <option value="1">每列 1 個（整行最寬）</option>
+                    <option value="2">每列 2 個</option>
+                    <option value="3">每列 3 個</option>
+                  </select>
+                </Field>
+                <Field
+                  label="多圖相簿的按鈕訊息文字"
+                  hint="多圖無法直接掛按鈕，bot 會另發一則訊息放按鈕；這是那則訊息上方的文字。留空會顯示極簡符號「·」。"
+                >
+                  <Input
+                    value={draft.albumButtonText}
+                    onChange={(e) =>
+                      setDraft({ ...draft, albumButtonText: e.target.value })
+                    }
+                    placeholder="例如：👇 點我預約 / 加入頻道"
+                  />
+                </Field>
               </div>
             </div>
             <div className="flex gap-2">

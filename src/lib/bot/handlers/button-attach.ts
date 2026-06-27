@@ -30,7 +30,7 @@ export function registerButtonAttachHandler(bot: Bot) {
     const group = await getGroupByChatId(ctx.chat.id);
     if (!group || !group.isActive || !group.buttonAttachEnabled) return next();
 
-    const defaultKb = renderButtons(group.defaultButtons);
+    const defaultKb = renderButtons(group.defaultButtons, group.buttonsPerRow);
     if (defaultKb.length === 0) return next();
 
     // 只處理 admin 的貼文
@@ -45,6 +45,7 @@ export function registerButtonAttachHandler(bot: Bot) {
         chatId,
         ctx.message.media_group_id,
         defaultKb,
+        group.albumButtonText,
       );
       return next();
     }
@@ -92,7 +93,7 @@ export function registerButtonAttachHandler(bot: Bot) {
     const group = await getGroupByChatId(ctx.chat.id);
     if (!group || !group.isActive || !group.buttonAttachEnabled) return next();
 
-    const defaultKb = renderButtons(group.defaultButtons);
+    const defaultKb = renderButtons(group.defaultButtons, group.buttonsPerRow);
     if (defaultKb.length === 0) return next();
 
     const post = ctx.channelPost;
@@ -104,6 +105,7 @@ export function registerButtonAttachHandler(bot: Bot) {
         ctx.chat.id,
         post.media_group_id,
         defaultKb,
+        group.albumButtonText,
       );
       return next();
     }

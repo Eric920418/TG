@@ -57,6 +57,13 @@
       "when": 1780337627950,
       "tag": "0007_pale_king_bedlam",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782557672270,
+      "tag": "0008_loving_zeigeist",
+      "breakpoints": true
     }
   ]
 }

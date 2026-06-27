@@ -103,6 +103,10 @@ export const groups = pgTable(
     buttonAttachEnabled: boolean("button_attach_enabled")
       .notNull()
       .default(false),
+    // 按鈕每列幾個（1~3）。文字長的群設 1（整行最寬不被截斷），文字短想省空間設 2/3
+    buttonsPerRow: integer("buttons_per_row").notNull().default(1),
+    // 多圖相簿無法掛按鈕，會另發一則訊息放按鈕；這是那則訊息的文字（留空用極簡符號）
+    albumButtonText: text("album_button_text").notNull().default(""),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
