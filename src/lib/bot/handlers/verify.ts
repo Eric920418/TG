@@ -5,8 +5,36 @@ import { db } from "@/lib/db";
 import { pendingVerifications, questions } from "@/lib/db/schema";
 import { getGroupByChatId } from "@/lib/bot/group-cache";
 import { log, errorMessage } from "@/lib/log";
+import { qstash } from "@/lib/qstash";
+import { env } from "@/lib/env";
 
 const CALLBACK_PREFIX = "vfy:";
+
+/**
+ * 在「到期當下」排一則 QStash 訊息來踢人，取代每分鐘輪詢的 cron。
+ * 為什麼存在：舊做法是 vercel cron 每 60 秒掃一次 pendingVerifications，
+ * 但 Neon 閒置滿 5 分鐘才會 scale-to-zero，每分鐘戳一次等於讓 compute
+ * 24/7 醒著（實測連續 27 天未休眠），compute 費用是純浪費。
+ * 改成到期才觸發後：沒人待驗證時 DB 完全不會被叫醒，且踢人時間比原本
+ * 最多延遲 60 秒更準。QStash 失敗時由 vercel.json 的低頻 cron 兜底。
+ */
+async function scheduleExpiryKick(expiresAt: Date): Promise<void> {
+  try {
+    await qstash().publishJSON({
+      url: `${env().NEXT_PUBLIC_BASE_URL}/api/cron/verification-expire`,
+      body: {},
+      // +5s：確保觸發時 expiresAt < now 條件必定成立
+      notBefore: Math.floor(expiresAt.getTime() / 1000) + 5,
+      retries: 2,
+    });
+  } catch (err) {
+    // 排程失敗不影響入群流程，低頻 cron 會兜底
+    await log({
+      type: "verify.expiry_schedule_failed",
+      error: errorMessage(err),
+    });
+  }
+}
 
 function buildKeyboard(pendingId: number, options: string[]) {
   const kb = new InlineKeyboard();
@@ -101,6 +129,8 @@ export function registerVerifyHandlers(bot: Bot) {
         },
       })
       .returning();
+
+    await scheduleExpiryKick(expiresAt);
 
     const user = upd.new_chat_member.user;
     const displayName = user.first_name + (user.last_name ? ` ${user.last_name}` : "");

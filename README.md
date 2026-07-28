@@ -182,14 +182,16 @@ pnpm tg:delete-webhook # 移除 webhook（切換 polling 開發用）
 
 ## Vercel Cron
 
-`vercel.json` 已註冊兩條：
+`vercel.json` 已註冊三條。**兩條主要 cron 刻意都用 `*/30` 對齊在同一分鐘觸發**——見下方「為什麼 cron 要對齊且低頻」。
 
 | Path | Schedule | 用途 |
 |---|---|---|
-| `/api/cron/sweep` | `*/5 * * * *` | 補發 `status='pending' AND send_at < now()` 的排程 |
-| `/api/cron/verification-expire` | `* * * * *` | 踢出超時未答題的待驗證用戶 |
+| `/api/cron/sweep` | `*/30 * * * *` | 兜底補發 `status='pending' AND send_at < now()` 的排程（主路徑是 QStash） |
+| `/api/cron/verification-expire` | `*/30 * * * *` | 兜底踢出超時未答題的待驗證用戶（主路徑是 QStash） |
+| `/api/cron/ensure-webhook` | `0 17 * * *` | 每日確保 Telegram webhook 仍註冊 |
 
 Cron 端點用 `Authorization: Bearer <CRON_SECRET>` 驗章。Vercel 會自動帶入。
+`verification-expire` 另接受 `upstash-signature`（QStash 到期即時觸發，走 POST）。
 
 ## 簡繁檢測策略
 
@@ -201,7 +203,13 @@ Cron 端點用 `Authorization: Bearer <CRON_SECRET>` 驗章。Vercel 會自動�
 1. 後台建立 → `scheduled_posts` 寫入 `status='pending'`。
 2. 同時呼叫 `qstash.publishJSON({ notBefore })` 預定時間觸發 `/api/cron/send-scheduled?id=X`。
 3. 端點驗 `upstash-signature` → 發送 → 標記 `sent` / `failed`。
-4. 萬一 QStash 掉訊息，Vercel Cron 每 5 分鐘掃 `status='pending' AND send_at < now()` 補發。
+4. 萬一 QStash 掉訊息，Vercel Cron 每 30 分鐘掃 `status='pending' AND send_at < now()` 補發。
+
+入群驗證逾時採同一套（`src/lib/bot/handlers/verify.ts` 的 `scheduleExpiryKick`）：
+1. 有人入群 → 寫入 `pending_verifications`（`expires_at = now + verify_timeout_sec`，預設 300 秒）。
+2. 同時 `qstash.publishJSON({ notBefore: expires_at + 5s })` 預約觸發 `/api/cron/verification-expire`。
+3. 到期時 QStash POST 打進來（驗 `upstash-signature`）→ 掃出過期列 → 踢人。
+4. QStash 失敗時，`*/30` 的 Vercel Cron 兜底。
 
 ## 安全機制
 
@@ -210,13 +218,17 @@ Cron 端點用 `Authorization: Bearer <CRON_SECRET>` 驗章。Vercel 會自動�
 | `/api/telegram/webhook` | `X-Telegram-Bot-Api-Secret-Token` header 驗 |
 | `/api/auth/telegram` | HMAC-SHA256 驗 Telegram Login Widget hash |
 | `/api/cron/send-scheduled` | QStash 簽章 **或** `CRON_SECRET` |
-| `/api/cron/sweep` & `/api/cron/verification-expire` | `Authorization: Bearer <CRON_SECRET>` |
+| `/api/cron/verification-expire` | QStash 簽章 **或** `CRON_SECRET` |
+| `/api/cron/sweep` & `/api/cron/ensure-webhook` | `Authorization: Bearer <CRON_SECRET>` |
 | Server actions | `requireAdmin` / `requireOwner`（session-based） |
 
 ## 設計取捨
 
 - **為什麼用 grammY 不用 Telegraf**：grammY 對 serverless 友善（`webhookCallback(bot, "std/http")` 原生支援 Web Request），不像 Telegraf 預設 long polling。
 - **為什麼 QStash + Vercel Cron 雙保險**：Vercel Cron 最小單位是「每分鐘」，且只支援 cron expression 不能任意時間；QStash 反之，但偶爾掉訊息。兩者互補。
+- **⚠️ 為什麼 cron 要對齊且低頻（不要改回 `*/5` 或 `* * * * *`）**：Neon compute 閒置滿 **5 分鐘**才會 scale-to-zero，睡著才不計費。舊設定 `verification-expire` 每 1 分鐘、`sweep` 每 5 分鐘打 DB，等於**永遠等不到那 5 分鐘的閒置窗**——實測 compute 連續醒著 27 天沒睡過，光這一個 project 就吃掉約 180 CU-hr/月（Launch 方案整月額度才 300），是純浪費。
+  改法有兩層：(1) 把「等到期才要做的事」改成 QStash 到期觸發（見上方 `scheduleExpiryKick`），沒人待驗證時 DB 完全不會被叫醒，且比原本最多延遲 60 秒**更準**；(2) 剩下的兜底 cron 降到 `*/30`，且**兩條刻意排在同一分鐘**，讓它們共用同一次喚醒——若錯開成 `*/30` 與 `*/25`，喚醒次數會變兩倍、省錢效果直接砍半。
+  修改任何 cron 頻率前請先想：**這個間隔會不會小於 5 分鐘？兩條 cron 有沒有對齊？**
 - **為什麼按鈕附加在 Group 要「刪原訊息+重發」**：Telegram Bot API 的 `editMessageReplyMarkup` 只能編輯 bot 自己發的訊息或 channel post，無法在真人 admin 的群組訊息上加 inline keyboard。所以 Group/Supergroup 只能由 bot `copyMessage` 重發（用 `copyMessage` 而非 `forwardMessage` 是因為不帶「forwarded from」標記，看起來像 bot 原生發的）；Channel 則可原地編輯，較乾淨。
 - **為什麼 bot init() 只跑一次**：grammY 的 `init()` 會呼叫 `getMe`，每個 cold start 都跑會浪費 latency。用 module-level cache。
 - **為什麼舊 staging 不會出現在排程下拉**：`staging_messages` schema 後來加了 `text` / `entities` / `media_file_id` snapshot 欄位以支援 user-mode 發送（custom_emoji 在 channel 保留），早期捕獲的 row 這些欄位是 NULL。`/posts/new` 與 `/posts/[id]` 用 `WHERE text IS NOT NULL OR media_file_id IS NOT NULL` 過濾，避免「能選但選了就壞」的 UX。舊 row 保留在 DB（不直接刪）。如需取回那條訊息：在 Telegram 重新轉發給 bot，會產生帶 snapshot 的新 row。
